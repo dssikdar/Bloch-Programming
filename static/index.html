@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quantum Blocks Lab</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Quantum Circuit Builder</p>
+          <h1>Quantum Blocks Lab</h1>
+          <p class="hero-text">
+            Build a circuit, run it step by step, and watch each qubit change.
+          </p>
+        </div>
+        <div class="hero-badge">
+          <span>Red</span>
+          <span class="hero-dot hero-dot-red"></span>
+          <span>|0&gt;</span>
+          <span class="hero-dot hero-dot-mix"></span>
+          <span>superposition</span>
+          <span class="hero-dot hero-dot-blue"></span>
+          <span>|1&gt;</span>
+        </div>
+      </header>
+
+      <section class="control-strip">
+        <div class="control-card">
+          <label for="qubit-count">Qubits</label>
+          <select id="qubit-count" aria-label="Number of qubits"></select>
+        </div>
+        <div class="control-card control-card-grow">
+          <span>Input qubits</span>
+          <div id="initial-bits" class="initial-bits" aria-live="polite"></div>
+        </div>
+        <div class="control-actions">
+          <button id="clear-button" class="action-button">Clear blocks</button>
+          <button id="preset-button" class="action-button">Load Bell demo</button>
+        </div>
+      </section>
+
+      <section class="panel palette-panel">
+        <div class="panel-heading">
+          <h2>Block Palette</h2>
+          <p>Click a gate to add it, or drag it into the circuit.</p>
+        </div>
+        <div id="palette" class="palette-row"></div>
+      </section>
+
+      <section class="panel workspace-panel">
+        <div class="panel-heading">
+          <h2>Quantum Workspace</h2>
+          <p>Each column is one moment in the circuit. Open a gate to choose its qubits, then close it.</p>
+        </div>
+        <div id="workspace-dropzone" class="workspace-dropzone">
+          <div id="workspace" class="circuit-board"></div>
+        </div>
+        <div id="workspace-help" class="workspace-help"></div>
+      </section>
+
+      <section class="panel story-panel">
+        <div class="panel-heading">
+          <h2>Quantum Story</h2>
+          <p>Follow the circuit one step at a time.</p>
+        </div>
+        <div class="story-toolbar">
+          <div id="status-message" class="status-message">Running initial simulation...</div>
+          <button id="animate-button" class="action-button action-button-primary" type="button">
+            Animate Circuit
+          </button>
+        </div>
+        <div id="timeline" class="timeline"></div>
+        <div class="story-layout">
+          <div class="story-column">
+            <div id="transition" class="transition"></div>
+            <div id="global-state" class="global-state"></div>
+          </div>
+          <div id="qubit-spheres" class="sphere-grid"></div>
+        </div>
+      </section>
+    </div>
+
+    <template id="palette-block-template">
+      <button class="palette-block" type="button" draggable="true">
+        <span class="palette-code"></span>
+        <strong class="palette-name"></strong>
+        <span class="palette-category"></span>
+        <div class="palette-tooltip" role="tooltip">
+          <strong class="palette-tooltip-title"></strong>
+          <p class="palette-tooltip-purpose"></p>
+          <p class="palette-tooltip-function"></p>
+          <p class="palette-tooltip-inputs"></p>
+        </div>
+      </button>
+    </template>
+
+    <template id="sphere-card-template">
+      <article class="sphere-card">
+        <div class="sphere-card-header">
+          <h3 class="sphere-title"></h3>
+          <span class="sphere-summary"></span>
+        </div>
+        <canvas class="sphere-canvas" width="260" height="220"></canvas>
+        <div class="sphere-stats"></div>
+      </article>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
