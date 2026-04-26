@@ -1,4 +1,5 @@
 const MIN_SLOT_COUNT = 4;
+const APP_BUILD = "github-pages-static-simulator-2026-04-25";
 const ROW_HEIGHT =
   Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-height")) || 116;
 const SLOT_BOX_HEIGHT = 98;
@@ -22,6 +23,124 @@ const state = {
   activeEditorGateId: null,
   isAnimating: false,
   animationTimer: null,
+};
+
+const LOCAL_CONFIG = {
+  maxQubits: 5,
+  gates: [
+    {
+      id: "h",
+      label: "Hadamard",
+      category: "Superposition",
+      description: "Turns a qubit with a definitive state into a superposition of red |0> and blue |1>.",
+      fields: [{ key: "target", label: "Target", kind: "qubit" }],
+    },
+    {
+      id: "x",
+      label: "Pauli-X",
+      category: "Single-Qubit",
+      description: "Rotates around the X axis, flipping red |0> to blue |1> and blue |1> to red |0>.",
+      fields: [{ key: "target", label: "Target", kind: "qubit" }],
+    },
+    {
+      id: "y",
+      label: "Pauli-Y",
+      category: "Single-Qubit",
+      description: "Rotates around the Y axis with a phase twist.",
+      fields: [{ key: "target", label: "Target", kind: "qubit" }],
+    },
+    {
+      id: "z",
+      label: "Pauli-Z",
+      category: "Single-Qubit",
+      description: "Rotates around the Z axis, changing the phase of the blue |1> component.",
+      fields: [{ key: "target", label: "Target", kind: "qubit" }],
+    },
+    {
+      id: "s",
+      label: "Phase-S",
+      category: "Phase",
+      description: "Adds a quarter-turn phase to the blue |1> part.",
+      fields: [{ key: "target", label: "Target", kind: "qubit" }],
+    },
+    {
+      id: "t",
+      label: "Phase-T",
+      category: "Phase",
+      description: "Adds an eighth-turn phase to the blue |1> part.",
+      fields: [{ key: "target", label: "Target", kind: "qubit" }],
+    },
+    {
+      id: "rx",
+      label: "Rotate-X",
+      category: "Rotation",
+      description: "Turns the quantum state vector around the X axis.",
+      fields: [
+        { key: "target", label: "Target", kind: "qubit" },
+        { key: "angle", label: "Angle", kind: "angle", default: 90 },
+      ],
+    },
+    {
+      id: "ry",
+      label: "Rotate-Y",
+      category: "Rotation",
+      description: "Turns the quantum state vector around the Y axis.",
+      fields: [
+        { key: "target", label: "Target", kind: "qubit" },
+        { key: "angle", label: "Angle", kind: "angle", default: 90 },
+      ],
+    },
+    {
+      id: "rz",
+      label: "Rotate-Z",
+      category: "Rotation",
+      description: "Turns the quantum state vector around the Z axis.",
+      fields: [
+        { key: "target", label: "Target", kind: "qubit" },
+        { key: "angle", label: "Angle", kind: "angle", default: 90 },
+      ],
+    },
+    {
+      id: "cx",
+      label: "Controlled-X",
+      category: "Entangling",
+      description: "Flips the target only when the control is |1>.",
+      fields: [
+        { key: "control", label: "Control", kind: "qubit" },
+        { key: "target", label: "Target", kind: "qubit" },
+      ],
+    },
+    {
+      id: "cz",
+      label: "Controlled-Z",
+      category: "Entangling",
+      description: "Adds phase when both qubits are |1>.",
+      fields: [
+        { key: "control", label: "Control", kind: "qubit" },
+        { key: "target", label: "Target", kind: "qubit" },
+      ],
+    },
+    {
+      id: "swap",
+      label: "Swap",
+      category: "Two-Qubit",
+      description: "Exchanges the states of two qubits.",
+      fields: [
+        { key: "target", label: "Qubit A", kind: "qubit" },
+        { key: "target2", label: "Qubit B", kind: "qubit" },
+      ],
+    },
+    {
+      id: "measure",
+      label: "Measure",
+      category: "Measurement",
+      description: "Measures a qubit along the chosen axis and collapses it to an outcome.",
+      fields: [
+        { key: "target", label: "Target", kind: "qubit" },
+        { key: "axis", label: "Axis", kind: "choice", default: "Z", options: ["X", "Y", "Z"] },
+      ],
+    },
+  ],
 };
 
 const gateGuide = {
@@ -106,6 +225,8 @@ const statusMessageElement = document.querySelector("#status-message");
 const animateButtonElement = document.querySelector("#animate-button");
 const paletteTemplate = document.querySelector("#palette-block-template");
 const sphereTemplate = document.querySelector("#sphere-card-template");
+
+console.info(`Quantum Blocks Lab build: ${APP_BUILD}`);
 
 function shortGateLabel(label) {
   return label
@@ -1007,25 +1128,502 @@ function renderResult() {
   updateAnimateButton();
 }
 
-async function runSimulation() {
+function complex(real = 0, imag = 0) {
+  return { real, imag };
+}
+
+function complexAdd(left, right) {
+  return complex(left.real + right.real, left.imag + right.imag);
+}
+
+function complexMultiply(left, right) {
+  return complex(left.real * right.real - left.imag * right.imag, left.real * right.imag + left.imag * right.real);
+}
+
+function complexConjugate(value) {
+  return complex(value.real, -value.imag);
+}
+
+function complexScale(value, scalar) {
+  return complex(value.real * scalar, value.imag * scalar);
+}
+
+function complexMagnitude(value) {
+  return Math.hypot(value.real, value.imag);
+}
+
+function complexMagnitudeSquared(value) {
+  return value.real * value.real + value.imag * value.imag;
+}
+
+function roundForPayload(value, digits = 6) {
+  const rounded = Number(value.toFixed(digits));
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+function angleToRadians(angleDegrees) {
+  return (angleDegrees * Math.PI) / 180;
+}
+
+function formatBasisLabel(index, numQubits) {
+  return Array.from({ length: numQubits }, (_, qubit) => ((index >> qubit) & 1).toString()).join("");
+}
+
+function validateQubit(index, numQubits, label) {
+  if (!Number.isInteger(index)) {
+    throw new Error(`${label} must be an integer.`);
+  }
+  if (index < 0 || index >= numQubits) {
+    throw new Error(`${label} must be between 0 and ${numQubits - 1}.`);
+  }
+  return index;
+}
+
+function validateSimulationGate(gate, numQubits) {
+  const definition = definitionForGate(gate.type);
+  if (!definition) {
+    throw new Error(`Unsupported gate type: ${gate.type}.`);
+  }
+
+  const normalized = { type: gate.type };
+  definition.fields.forEach((field) => {
+    const value = gate[field.key] ?? field.default;
+    if (field.kind === "qubit") {
+      normalized[field.key] = validateQubit(value, numQubits, field.key);
+    } else if (field.kind === "angle") {
+      if (typeof value !== "number" || Number.isNaN(value)) {
+        throw new Error(`${field.key} must be numeric.`);
+      }
+      normalized[field.key] = value;
+    } else if (field.kind === "choice") {
+      if (!field.options.includes(value)) {
+        throw new Error(`${field.key} must be one of ${field.options.join(", ")}.`);
+      }
+      normalized[field.key] = value;
+    }
+  });
+
+  if ((gate.type === "cx" || gate.type === "cz") && normalized.control === normalized.target) {
+    throw new Error("Control and target must be different qubits.");
+  }
+  if (gate.type === "swap" && normalized.target === normalized.target2) {
+    throw new Error("Swap needs two different qubits.");
+  }
+
+  return normalized;
+}
+
+function applySingleQubitMatrix(vector, numQubits, target, matrix) {
+  const next = vector.map((amplitude) => complex(amplitude.real, amplitude.imag));
+  const mask = 1 << target;
+  const dimension = 1 << numQubits;
+
+  for (let index = 0; index < dimension; index += 1) {
+    if ((index & mask) !== 0) {
+      continue;
+    }
+    const zeroIndex = index;
+    const oneIndex = index | mask;
+    const zeroAmplitude = vector[zeroIndex];
+    const oneAmplitude = vector[oneIndex];
+
+    next[zeroIndex] = complexAdd(
+      complexMultiply(matrix[0][0], zeroAmplitude),
+      complexMultiply(matrix[0][1], oneAmplitude),
+    );
+    next[oneIndex] = complexAdd(
+      complexMultiply(matrix[1][0], zeroAmplitude),
+      complexMultiply(matrix[1][1], oneAmplitude),
+    );
+  }
+
+  return next;
+}
+
+function singleQubitMatrix(gate) {
+  const sqrtHalf = Math.SQRT1_2;
+  if (gate.type === "h") {
+    return [
+      [complex(sqrtHalf), complex(sqrtHalf)],
+      [complex(sqrtHalf), complex(-sqrtHalf)],
+    ];
+  }
+  if (gate.type === "x") {
+    return [
+      [complex(0), complex(1)],
+      [complex(1), complex(0)],
+    ];
+  }
+  if (gate.type === "y") {
+    return [
+      [complex(0), complex(0, -1)],
+      [complex(0, 1), complex(0)],
+    ];
+  }
+  if (gate.type === "z") {
+    return [
+      [complex(1), complex(0)],
+      [complex(0), complex(-1)],
+    ];
+  }
+  if (gate.type === "s") {
+    return [
+      [complex(1), complex(0)],
+      [complex(0), complex(0, 1)],
+    ];
+  }
+  if (gate.type === "sdg") {
+    return [
+      [complex(1), complex(0)],
+      [complex(0), complex(0, -1)],
+    ];
+  }
+  if (gate.type === "t") {
+    return [
+      [complex(1), complex(0)],
+      [complex(0), complex(Math.SQRT1_2, Math.SQRT1_2)],
+    ];
+  }
+  if (gate.type === "rx") {
+    const halfAngle = angleToRadians(gate.angle) / 2;
+    return [
+      [complex(Math.cos(halfAngle)), complex(0, -Math.sin(halfAngle))],
+      [complex(0, -Math.sin(halfAngle)), complex(Math.cos(halfAngle))],
+    ];
+  }
+  if (gate.type === "ry") {
+    const halfAngle = angleToRadians(gate.angle) / 2;
+    return [
+      [complex(Math.cos(halfAngle)), complex(-Math.sin(halfAngle))],
+      [complex(Math.sin(halfAngle)), complex(Math.cos(halfAngle))],
+    ];
+  }
+  if (gate.type === "rz") {
+    const halfAngle = angleToRadians(gate.angle) / 2;
+    return [
+      [complex(Math.cos(-halfAngle), Math.sin(-halfAngle)), complex(0)],
+      [complex(0), complex(Math.cos(halfAngle), Math.sin(halfAngle))],
+    ];
+  }
+  throw new Error(`Unsupported single-qubit gate: ${gate.type}.`);
+}
+
+function applyControlledX(vector, numQubits, control, target) {
+  const next = vector.map((amplitude) => complex(amplitude.real, amplitude.imag));
+  const controlMask = 1 << control;
+  const targetMask = 1 << target;
+  const dimension = 1 << numQubits;
+
+  for (let index = 0; index < dimension; index += 1) {
+    if ((index & controlMask) === 0 || (index & targetMask) !== 0) {
+      continue;
+    }
+    const pairedIndex = index | targetMask;
+    next[index] = vector[pairedIndex];
+    next[pairedIndex] = vector[index];
+  }
+
+  return next;
+}
+
+function applyControlledZ(vector, numQubits, control, target) {
+  const controlMask = 1 << control;
+  const targetMask = 1 << target;
+  return vector.map((amplitude, index) =>
+    (index & controlMask) !== 0 && (index & targetMask) !== 0
+      ? complexScale(amplitude, -1)
+      : complex(amplitude.real, amplitude.imag),
+  );
+}
+
+function applySwap(vector, numQubits, firstTarget, secondTarget) {
+  const next = vector.map((amplitude) => complex(amplitude.real, amplitude.imag));
+  const firstMask = 1 << firstTarget;
+  const secondMask = 1 << secondTarget;
+  const dimension = 1 << numQubits;
+
+  for (let index = 0; index < dimension; index += 1) {
+    const firstBit = (index & firstMask) !== 0;
+    const secondBit = (index & secondMask) !== 0;
+    if (firstBit || !secondBit) {
+      continue;
+    }
+    const pairedIndex = index ^ firstMask ^ secondMask;
+    next[index] = vector[pairedIndex];
+    next[pairedIndex] = vector[index];
+  }
+
+  return next;
+}
+
+function applyGateInstruction(vector, gate, numQubits) {
+  if (["h", "x", "y", "z", "s", "sdg", "t", "rx", "ry", "rz"].includes(gate.type)) {
+    return applySingleQubitMatrix(vector, numQubits, gate.target, singleQubitMatrix(gate));
+  }
+  if (gate.type === "cx") {
+    return applyControlledX(vector, numQubits, gate.control, gate.target);
+  }
+  if (gate.type === "cz") {
+    return applyControlledZ(vector, numQubits, gate.control, gate.target);
+  }
+  if (gate.type === "swap") {
+    return applySwap(vector, numQubits, gate.target, gate.target2);
+  }
+  throw new Error(`Unsupported gate type: ${gate.type}.`);
+}
+
+function collapseInZBasis(vector, target, numQubits, preferredOutcome) {
+  let probability = 0;
+  vector.forEach((amplitude, index) => {
+    const bit = (index >> target) & 1;
+    if (String(bit) === preferredOutcome) {
+      probability += complexMagnitudeSquared(amplitude);
+    }
+  });
+
+  if (probability < 1e-9) {
+    return vector.map((amplitude) => complex(amplitude.real, amplitude.imag));
+  }
+
+  const scale = Math.sqrt(probability);
+  return vector.map((amplitude, index) => {
+    const bit = (index >> target) & 1;
+    return String(bit) === preferredOutcome ? complexScale(amplitude, 1 / scale) : complex(0);
+  });
+}
+
+function rotateForMeasurement(vector, axis, target, numQubits) {
+  if (axis === "X") {
+    return applyGateInstruction(vector, { type: "h", target }, numQubits);
+  }
+  if (axis === "Y") {
+    const afterSdg = applyGateInstruction(vector, { type: "sdg", target }, numQubits);
+    return applyGateInstruction(afterSdg, { type: "h", target }, numQubits);
+  }
+  return vector.map((amplitude) => complex(amplitude.real, amplitude.imag));
+}
+
+function undoMeasurementRotation(vector, axis, target, numQubits) {
+  if (axis === "X") {
+    return applyGateInstruction(vector, { type: "h", target }, numQubits);
+  }
+  if (axis === "Y") {
+    const afterH = applyGateInstruction(vector, { type: "h", target }, numQubits);
+    return applyGateInstruction(afterH, { type: "s", target }, numQubits);
+  }
+  return vector.map((amplitude) => complex(amplitude.real, amplitude.imag));
+}
+
+function measureGate(vector, gate, numQubits) {
+  const rotatedState = rotateForMeasurement(vector, gate.axis, gate.target, numQubits);
+  const probabilities = [0, 0];
+
+  rotatedState.forEach((amplitude, index) => {
+    const bit = (index >> gate.target) & 1;
+    probabilities[bit] += complexMagnitudeSquared(amplitude);
+  });
+
+  const outcome = probabilities[0] >= probabilities[1] ? "0" : "1";
+  const collapsedRotated = collapseInZBasis(rotatedState, gate.target, numQubits, outcome);
+  const postMeasurement = undoMeasurementRotation(collapsedRotated, gate.axis, gate.target, numQubits);
+
+  return {
+    statevector: postMeasurement,
+    measurement: {
+      axis: gate.axis,
+      target: gate.target,
+      probabilities: {
+        0: roundForPayload(probabilities[0]),
+        1: roundForPayload(probabilities[1]),
+      },
+      outcome,
+      rule: "The app collapses to the more likely outcome. Exact ties resolve to 0.",
+    },
+  };
+}
+
+function summarizeQubitState(qubitState) {
+  const redPercentage = Math.round(qubitState.zeroProbability * 100);
+  const bluePercentage = Math.round(qubitState.oneProbability * 100);
+  if (qubitState.entangled) {
+    return `${redPercentage}% Red, ${bluePercentage}% Blue, entangled.`;
+  }
+  return `${redPercentage}% Red, ${bluePercentage}% Blue.`;
+}
+
+function singleQubitReport(vector, qubitIndex, numQubits) {
+  const mask = 1 << qubitIndex;
+  let zeroProbability = 0;
+  let oneProbability = 0;
+  let coherence = complex(0);
+
+  for (let index = 0; index < 1 << numQubits; index += 1) {
+    if ((index & mask) !== 0) {
+      continue;
+    }
+    const zeroAmplitude = vector[index];
+    const oneAmplitude = vector[index | mask];
+    zeroProbability += complexMagnitudeSquared(zeroAmplitude);
+    oneProbability += complexMagnitudeSquared(oneAmplitude);
+    coherence = complexAdd(coherence, complexMultiply(zeroAmplitude, complexConjugate(oneAmplitude)));
+  }
+
+  const xAxis = 2 * coherence.real;
+  const yAxis = -2 * coherence.imag;
+  const zAxis = zeroProbability - oneProbability;
+  const purity = zeroProbability * zeroProbability + oneProbability * oneProbability + 2 * complexMagnitudeSquared(coherence);
+  const entangled = purity < 0.999999;
+  const report = {
+    index: qubitIndex,
+    zeroProbability: roundForPayload(zeroProbability),
+    oneProbability: roundForPayload(oneProbability),
+    blochVector: entangled
+      ? null
+      : {
+          x: roundForPayload(xAxis),
+          y: roundForPayload(yAxis),
+          z: roundForPayload(zAxis),
+        },
+    purity: roundForPayload(Math.min(1, Math.max(0, purity))),
+    entangled,
+    coherenceMagnitude: roundForPayload(complexMagnitude(coherence)),
+    summary: "",
+  };
+  report.summary = summarizeQubitState(report);
+  return report;
+}
+
+function snapshotPayload({ label, machineNote, statevector, numQubits, gate, measurement = null }) {
+  const amplitudes = [];
+  statevector.forEach((amplitude, index) => {
+    const magnitude = complexMagnitude(amplitude);
+    if (magnitude < 1e-9) {
+      return;
+    }
+    amplitudes.push({
+      basis: formatBasisLabel(index, numQubits),
+      real: roundForPayload(amplitude.real),
+      imag: roundForPayload(amplitude.imag),
+      magnitude: roundForPayload(magnitude),
+      phaseDegrees: roundForPayload((Math.atan2(amplitude.imag, amplitude.real) * 180) / Math.PI, 3),
+    });
+  });
+
+  amplitudes.sort((left, right) => right.magnitude - left.magnitude || left.basis.localeCompare(right.basis));
+
+  return {
+    label,
+    machineNote,
+    gate,
+    measurement,
+    amplitudes,
+    qubits: Array.from({ length: numQubits }, (_, qubitIndex) => singleQubitReport(statevector, qubitIndex, numQubits)),
+  };
+}
+
+function describeGate(gate) {
+  const definition = definitionForGate(gate.type);
+  if (["x", "y", "z", "h", "s", "t"].includes(gate.type)) {
+    return `${definition.label} acts on q${gate.target}.`;
+  }
+  if (["rx", "ry", "rz"].includes(gate.type)) {
+    return `${definition.label} turns q${gate.target} by ${gate.angle} degrees.`;
+  }
+  if (gate.type === "cx" || gate.type === "cz") {
+    return `${definition.label} uses q${gate.control} to influence q${gate.target}.`;
+  }
+  if (gate.type === "swap") {
+    return `Swap exchanges q${gate.target} and q${gate.target2}.`;
+  }
+  if (gate.type === "measure") {
+    return `Measure reads q${gate.target} along the ${gate.axis}-axis and collapses it.`;
+  }
+  return definition.description;
+}
+
+function buildSimulation(payload) {
+  const numQubits = payload.numQubits ?? 2;
+  if (!Number.isInteger(numQubits) || numQubits < 1 || numQubits > state.config.maxQubits) {
+    throw new Error(`numQubits must be an integer between 1 and ${state.config.maxQubits}.`);
+  }
+
+  const initialBits = payload.initialBits ?? Array.from({ length: numQubits }, () => 0);
+  if (!Array.isArray(initialBits) || initialBits.length !== numQubits) {
+    throw new Error("initialBits must be a list matching the number of qubits.");
+  }
+
+  const normalizedBits = initialBits.map((bit, index) => {
+    if (bit !== 0 && bit !== 1) {
+      throw new Error(`Initial bit q${index} must be 0 or 1.`);
+    }
+    return bit;
+  });
+
+  const rawGates = payload.gates ?? [];
+  if (!Array.isArray(rawGates)) {
+    throw new Error("gates must be a list.");
+  }
+  const gates = rawGates.map((gate) => validateSimulationGate(gate, numQubits));
+
+  let initialIndex = 0;
+  normalizedBits.forEach((bit, qubitIndex) => {
+    if (bit === 1) {
+      initialIndex |= 1 << qubitIndex;
+    }
+  });
+
+  let statevector = Array.from({ length: 1 << numQubits }, (_, index) => (index === initialIndex ? complex(1) : complex(0)));
+  const snapshots = [
+    snapshotPayload({
+      label: "Initial state",
+      machineNote: "The qubits start here before entering the first machine block.",
+      statevector,
+      numQubits,
+      gate: null,
+    }),
+  ];
+
+  gates.forEach((gate, index) => {
+    let measurement = null;
+    if (gate.type === "measure") {
+      const result = measureGate(statevector, gate, numQubits);
+      statevector = result.statevector;
+      measurement = result.measurement;
+    } else {
+      statevector = applyGateInstruction(statevector, gate, numQubits);
+    }
+    snapshots.push(
+      snapshotPayload({
+        label: `After step ${index + 1}`,
+        machineNote: describeGate(gate),
+        statevector,
+        numQubits,
+        gate,
+        measurement,
+      }),
+    );
+  });
+
+  return {
+    numQubits,
+    initialBits: normalizedBits,
+    gates,
+    snapshots,
+    bitOrder: "The displayed basis labels follow q0, q1, q2 ... from left to right.",
+  };
+}
+
+function runSimulation() {
   stopAnimation();
   animateButtonElement.disabled = true;
   animateButtonElement.textContent = "Animate Circuit";
-  statusMessageElement.textContent = "Running Qiskit simulation...";
+  statusMessageElement.textContent = "Running browser simulation...";
   try {
-    const response = await fetch("/api/simulate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        numQubits: state.numQubits,
-        initialBits: state.initialBits,
-        gates: finalizedGates(),
-      }),
+    const result = buildSimulation({
+      numQubits: state.numQubits,
+      initialBits: state.initialBits,
+      gates: finalizedGates(),
     });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result.error || "Unknown simulation error.");
-    }
     state.result = result;
     state.selectedStep = Math.min(state.selectedStep, state.result.snapshots.length - 1);
     renderResult();
@@ -1053,9 +1651,8 @@ function presetBellPair() {
   runSimulation();
 }
 
-async function loadConfig() {
-  const response = await fetch("/api/config");
-  state.config = await response.json();
+function loadConfig() {
+  state.config = LOCAL_CONFIG;
   for (let qubits = 1; qubits <= state.config.maxQubits; qubits += 1) {
     const option = document.createElement("option");
     option.value = String(qubits);
@@ -1066,7 +1663,7 @@ async function loadConfig() {
   renderPalette();
   renderControls();
   renderWorkspace();
-  await runSimulation();
+  runSimulation();
 }
 
 qubitCountElement.addEventListener("change", () => {
