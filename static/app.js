@@ -131,6 +131,17 @@ const LOCAL_CONFIG = {
       ],
     },
     {
+      id: "cswap",
+      label: "Controlled-Swap",
+      category: "Entangling",
+      description: "Swaps two target qubits only when the control qubit is |1>.",
+      fields: [
+        { key: "control", label: "Control", kind: "qubit" },
+        { key: "target", label: "Target A", kind: "qubit" },
+        { key: "target2", label: "Target B", kind: "qubit" },
+      ],
+    },
+    {
       id: "measure",
       label: "Measure",
       category: "Measurement",
@@ -204,6 +215,11 @@ const gateGuide = {
     function: "Helpful when routing or reorganizing information in a circuit.",
     inputs: "Two target qubits.",
   },
+  cswap: {
+    purpose: "Uses one qubit to decide whether two others trade places.",
+    function: "Useful for showing conditional routing and the Fredkin gate.",
+    inputs: "One control qubit and two target qubits.",
+  },
   measure: {
     purpose: "Reads a qubit along an X, Y, or Z measurement axis.",
     function: "Collapses the qubit to an outcome in the chosen basis.",
@@ -261,14 +277,15 @@ function ensureSlotCount(minimum) {
   }
 }
 
-function siblingRow(rowHint) {
-  if (state.numQubits <= 1) {
-    return rowHint;
+function orderedRows(rowHint) {
+  if (state.numQubits <= 0) {
+    return [0];
   }
-  if (rowHint < state.numQubits - 1) {
-    return rowHint + 1;
+  const rows = [];
+  for (let offset = 0; offset < state.numQubits; offset += 1) {
+    rows.push((rowHint + offset) % state.numQubits);
   }
-  return rowHint - 1;
+  return rows;
 }
 
 function createGate(gateId, rowHint = 0, overrides = {}, finalized = false) {
@@ -289,13 +306,19 @@ function createGate(gateId, rowHint = 0, overrides = {}, finalized = false) {
     }
   });
 
+  const defaultRows = orderedRows(rowHint);
   if (gate.type === "cx" || gate.type === "cz") {
-    gate.control = rowHint;
-    gate.target = siblingRow(rowHint);
+    gate.control = defaultRows[0];
+    gate.target = defaultRows[1] ?? defaultRows[0];
   }
   if (gate.type === "swap") {
-    gate.target = rowHint;
-    gate.target2 = siblingRow(rowHint);
+    gate.target = defaultRows[0];
+    gate.target2 = defaultRows[1] ?? defaultRows[0];
+  }
+  if (gate.type === "cswap") {
+    gate.control = defaultRows[0];
+    gate.target = defaultRows[1] ?? defaultRows[0];
+    gate.target2 = defaultRows[2] ?? defaultRows[0];
   }
 
   Object.assign(gate, overrides);
@@ -353,6 +376,9 @@ function isGateConfigValid(gate) {
   if (gate.type === "swap" && gate.target === gate.target2) {
     return false;
   }
+  if (gate.type === "cswap" && new Set([gate.control, gate.target, gate.target2]).size < 3) {
+    return false;
+  }
   return true;
 }
 
@@ -398,6 +424,9 @@ function gateRows(gate) {
   }
   if (gate.type === "swap") {
     return [gate.target, gate.target2].sort((left, right) => left - right);
+  }
+  if (gate.type === "cswap") {
+    return [gate.control, gate.target, gate.target2].sort((left, right) => left - right);
   }
   return [gate.target];
 }
@@ -811,6 +840,23 @@ function renderMultiGateVisual(gate, stepNumber) {
     targetNode.textContent = gate.type === "cx" ? "X" : "Z";
 
     wrapper.append(controlNode, targetNode);
+  } else if (gate.type === "cswap") {
+    const controlNode = document.createElement("div");
+    controlNode.className = "multi-node control-node";
+    controlNode.style.top = `${(gate.control - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 12}px`;
+    controlNode.textContent = "C";
+
+    const firstNode = document.createElement("div");
+    firstNode.className = `multi-node ${categoryClass(definition.category)}`;
+    firstNode.style.top = `${(gate.target - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 26}px`;
+    firstNode.textContent = "SW";
+
+    const secondNode = document.createElement("div");
+    secondNode.className = `multi-node ${categoryClass(definition.category)}`;
+    secondNode.style.top = `${(gate.target2 - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 26}px`;
+    secondNode.textContent = "SW";
+
+    wrapper.append(controlNode, firstNode, secondNode);
   } else {
     const firstNode = document.createElement("div");
     firstNode.className = `multi-node ${categoryClass(definition.category)}`;
@@ -850,7 +896,7 @@ function renderSlotColumn(slotIndex) {
     }
     const stepNumber = stepMap.get(gate.id) ?? null;
     const visual =
-      gate.type === "cx" || gate.type === "cz" || gate.type === "swap"
+      gate.type === "cx" || gate.type === "cz" || gate.type === "swap" || gate.type === "cswap"
         ? renderMultiGateVisual(gate, stepNumber)
         : renderSingleGateVisual(gate, stepNumber);
     visual.addEventListener("click", () => {
@@ -1209,6 +1255,9 @@ function validateSimulationGate(gate, numQubits) {
   if (gate.type === "swap" && normalized.target === normalized.target2) {
     throw new Error("Swap needs two different qubits.");
   }
+  if (gate.type === "cswap" && new Set([normalized.control, normalized.target, normalized.target2]).size < 3) {
+    throw new Error("Controlled-Swap needs three different qubits.");
+  }
 
   return normalized;
 }
@@ -1356,6 +1405,28 @@ function applySwap(vector, numQubits, firstTarget, secondTarget) {
   return next;
 }
 
+function applyControlledSwap(vector, numQubits, control, firstTarget, secondTarget) {
+  const next = vector.map((amplitude) => complex(amplitude.real, amplitude.imag));
+  const controlMask = 1 << control;
+  const firstMask = 1 << firstTarget;
+  const secondMask = 1 << secondTarget;
+  const dimension = 1 << numQubits;
+
+  for (let index = 0; index < dimension; index += 1) {
+    const controlBit = (index & controlMask) !== 0;
+    const firstBit = (index & firstMask) !== 0;
+    const secondBit = (index & secondMask) !== 0;
+    if (!controlBit || firstBit || !secondBit) {
+      continue;
+    }
+    const pairedIndex = index ^ firstMask ^ secondMask;
+    next[index] = vector[pairedIndex];
+    next[pairedIndex] = vector[index];
+  }
+
+  return next;
+}
+
 function applyGateInstruction(vector, gate, numQubits) {
   if (["h", "x", "y", "z", "s", "sdg", "t", "rx", "ry", "rz"].includes(gate.type)) {
     return applySingleQubitMatrix(vector, numQubits, gate.target, singleQubitMatrix(gate));
@@ -1368,6 +1439,9 @@ function applyGateInstruction(vector, gate, numQubits) {
   }
   if (gate.type === "swap") {
     return applySwap(vector, numQubits, gate.target, gate.target2);
+  }
+  if (gate.type === "cswap") {
+    return applyControlledSwap(vector, numQubits, gate.control, gate.target, gate.target2);
   }
   throw new Error(`Unsupported gate type: ${gate.type}.`);
 }
@@ -1534,6 +1608,9 @@ function describeGate(gate) {
   }
   if (gate.type === "swap") {
     return `Swap exchanges q${gate.target} and q${gate.target2}.`;
+  }
+  if (gate.type === "cswap") {
+    return `Controlled-Swap uses q${gate.control} to swap q${gate.target} and q${gate.target2}.`;
   }
   if (gate.type === "measure") {
     return `Measure reads q${gate.target} along the ${gate.axis}-axis and collapses it.`;

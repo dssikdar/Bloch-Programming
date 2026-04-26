@@ -124,6 +124,17 @@ GATE_LIBRARY = [
         ],
     },
     {
+        "id": "cswap",
+        "label": "Controlled-Swap",
+        "category": "Entangling",
+        "description": "Swaps two target qubits only when the control qubit is |1>.",
+        "fields": [
+            {"key": "control", "label": "Control", "kind": "qubit"},
+            {"key": "target", "label": "Target A", "kind": "qubit"},
+            {"key": "target2", "label": "Target B", "kind": "qubit"},
+        ],
+    },
+    {
         "id": "measure",
         "label": "Measure",
         "category": "Measurement",
@@ -177,6 +188,8 @@ def validate_gate(gate: dict[str, Any], num_qubits: int) -> dict[str, Any]:
 
     if gate_type == "swap" and normalized["target"] == normalized["target2"]:
         raise ValueError("Swap needs two different qubits.")
+    if gate_type == "cswap" and len({normalized["control"], normalized["target"], normalized["target2"]}) < 3:
+        raise ValueError("Controlled-Swap needs three different qubits.")
 
     return normalized
 
@@ -207,6 +220,8 @@ def apply_gate_instruction(circuit: QuantumCircuit, gate: dict[str, Any]) -> Non
         circuit.cz(gate["control"], gate["target"])
     elif gate_type == "swap":
         circuit.swap(gate["target"], gate["target2"])
+    elif gate_type == "cswap":
+        circuit.cswap(gate["control"], gate["target"], gate["target2"])
 
 
 def evolve_statevector(statevector: Statevector, gate: dict[str, Any], num_qubits: int) -> Statevector:
@@ -392,6 +407,8 @@ def describe_gate(gate: dict[str, Any]) -> str:
         return f"{GATE_BY_ID[gate_type]['label']} uses q{gate['control']} to influence q{gate['target']}."
     if gate_type == "swap":
         return f"Swap exchanges q{gate['target']} and q{gate['target2']}."
+    if gate_type == "cswap":
+        return f"Controlled-Swap uses q{gate['control']} to swap q{gate['target']} and q{gate['target2']}."
     if gate_type == "measure":
         return f"Measure reads q{gate['target']} along the {gate['axis']}-axis and collapses it."
     return GATE_BY_ID[gate_type]["description"]

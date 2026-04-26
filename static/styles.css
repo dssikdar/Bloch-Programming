@@ -272,6 +272,10 @@ input {
   background: linear-gradient(160deg, #537cff, #1f9ce1);
 }
 
+.palette-block[data-category="Three-Qubit"] {
+  background: linear-gradient(160deg, #5e5ef7, #46bce0);
+}
+
 .palette-block[data-category="Measurement"] {
   background: linear-gradient(160deg, #855ef7, #5b46e0);
 }
@@ -611,6 +615,10 @@ input {
 .category-entangling,
 .category-two-qubit {
   background: linear-gradient(160deg, #537cff, #1f9ce1);
+}
+
+.category-three-qubit {
+  background: linear-gradient(160deg, #5e5ef7, #46bce0);
 }
 
 .category-measurement {
