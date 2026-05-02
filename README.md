@@ -12,7 +12,7 @@ The main app is a static browser app, so it can run from `static/index.html` or 
 - Per-gate editors for target qubits, control qubits, rotation angles, and measurement axes
 - Conflict checks so multi-qubit gates do not overlap invalidly inside the same circuit column
 - Built-in Bell-state demo using `H` on `q0` followed by `CX q0 -> q1`
-- Step timeline showing the initial state and every finalized gate result
+- Step timeline showing the initial state and every active gate result
 - Animated circuit playback through each state snapshot
 - Top basis-state display with probability bars, complex amplitudes, and phase angles
 - Per-qubit probability summaries using red for `|0>` and blue for `|1>`

@@ -1,5 +1,5 @@
 const MIN_SLOT_COUNT = 4;
-const APP_BUILD = "github-pages-static-simulator-2026-04-25";
+const APP_BUILD = "interactive-modes-2026-05-01";
 const ROW_HEIGHT =
   Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-height")) || 116;
 const SLOT_BOX_HEIGHT = 98;
@@ -18,6 +18,8 @@ const state = {
   initialBits: [0, 0],
   slots: Array.from({ length: MIN_SLOT_COUNT }, () => []),
   result: null,
+  mode: "lab",
+  activePracticeId: null,
   selectedStep: 0,
   nextGateId: 1,
   activeEditorGateId: null,
@@ -26,7 +28,7 @@ const state = {
 };
 
 const LOCAL_CONFIG = {
-  maxQubits: 5,
+  maxQubits: 8,
   gates: [
     {
       id: "h",
@@ -142,6 +144,17 @@ const LOCAL_CONFIG = {
       ],
     },
     {
+      id: "ccx",
+      label: "Toffoli",
+      category: "Three-Qubit",
+      description: "Flips the target only when both control qubits are |1>.",
+      fields: [
+        { key: "control", label: "Control A", kind: "qubit" },
+        { key: "control2", label: "Control B", kind: "qubit" },
+        { key: "target", label: "Target", kind: "qubit" },
+      ],
+    },
+    {
       id: "measure",
       label: "Measure",
       category: "Measurement",
@@ -220,6 +233,11 @@ const gateGuide = {
     function: "Useful for showing conditional routing and the Fredkin gate.",
     inputs: "One control qubit and two target qubits.",
   },
+  ccx: {
+    purpose: "Flips the target only when both controls are blue |1>.",
+    function: "The reversible building block behind AND, OR, and adder circuits.",
+    inputs: "Two control qubits and one target qubit.",
+  },
   measure: {
     purpose: "Reads a qubit along an X, Y, or Z measurement axis.",
     function: "Collapses the qubit to an outcome in the chosen basis.",
@@ -239,10 +257,154 @@ const qubitCountElement = document.querySelector("#qubit-count");
 const initialBitsElement = document.querySelector("#initial-bits");
 const statusMessageElement = document.querySelector("#status-message");
 const animateButtonElement = document.querySelector("#animate-button");
+const modeToggleElement = document.querySelector("#mode-toggle");
+const modeLabelElement = document.querySelector("#mode-label");
+const labModePanelElement = document.querySelector("#lab-mode-panel");
+const practiceModePanelElement = document.querySelector("#practice-mode-panel");
+const demoButtonsElement = document.querySelector("#demo-buttons");
+const practiceButtonsElement = document.querySelector("#practice-buttons");
+const checkSolutionButtonElement = document.querySelector("#check-solution-button");
+const showSolutionButtonElement = document.querySelector("#show-solution-button");
+const practiceFeedbackElement = document.querySelector("#practice-feedback");
 const paletteTemplate = document.querySelector("#palette-block-template");
 const sphereTemplate = document.querySelector("#sphere-card-template");
 
 console.info(`Quantum Blocks Lab build: ${APP_BUILD}`);
+
+const labDemos = [
+  {
+    id: "bell",
+    label: "Bell Demo",
+    description: "Create a two-qubit Bell pair.",
+    numQubits: 2,
+    initialBits: [0, 0],
+    gates: [
+      { type: "h", target: 0 },
+      { type: "cx", control: 0, target: 1 },
+    ],
+  },
+  {
+    id: "reversibility",
+    label: "Gate Reversibility",
+    description: "Apply gates and then undo them to return to the input.",
+    numQubits: 2,
+    initialBits: [1, 0],
+    gates: [
+      { type: "h", target: 0 },
+      { type: "cx", control: 0, target: 1 },
+      { type: "cx", control: 0, target: 1 },
+      { type: "h", target: 0 },
+    ],
+  },
+  {
+    id: "xor",
+    label: "XOR Gate",
+    description: "Write q0 XOR q1 into q2.",
+    numQubits: 3,
+    initialBits: [1, 0, 0],
+    gates: [
+      { type: "cx", control: 0, target: 2 },
+      { type: "cx", control: 1, target: 2 },
+    ],
+  },
+  {
+    id: "and",
+    label: "AND Gate",
+    description: "Write q0 AND q1 into q2.",
+    numQubits: 3,
+    initialBits: [1, 1, 0],
+    gates: [{ type: "ccx", control: 0, control2: 1, target: 2 }],
+  },
+];
+
+const practiceProblems = [
+  {
+    id: "ghz3",
+    label: "Standard GHZ",
+    description: "Prepare (|000> + |111>) / sqrt(2).",
+    numQubits: 3,
+    initialBits: [0, 0, 0],
+    expected: () => ghzVector(3),
+    solution: [
+      { type: "h", target: 0 },
+      { type: "cx", control: 0, target: 1 },
+      { type: "cx", control: 0, target: 2 },
+    ],
+  },
+  {
+    id: "or",
+    label: "OR Gate",
+    description: "Make q2 equal q0 OR q1.",
+    numQubits: 3,
+    initialBits: [0, 0, 0],
+    truthTable: {
+      outputBits: [2],
+      inputs: [
+        [0, 0, 0],
+        [0, 1, 0],
+        [1, 0, 0],
+        [1, 1, 0],
+      ],
+      expected(bits) {
+        return { 2: bits[0] || bits[1] ? 1 : 0 };
+      },
+    },
+    solution: [
+      { type: "cx", control: 0, target: 2 },
+      { type: "cx", control: 1, target: 2 },
+      { type: "ccx", control: 0, control2: 1, target: 2 },
+    ],
+  },
+  {
+    id: "ghz8-depth",
+    label: "8-Qubit GHZ",
+    description: "Prepare an 8-qubit GHZ state with depth 5 or less.",
+    numQubits: 8,
+    initialBits: Array.from({ length: 8 }, () => 0),
+    expected: () => ghzVector(8),
+    maxDepth: 5,
+    solution: [
+      [{ type: "h", target: 0 }],
+      [{ type: "cx", control: 0, target: 4 }],
+      [
+        { type: "cx", control: 0, target: 2 },
+        { type: "cx", control: 4, target: 6 },
+      ],
+      [
+        { type: "cx", control: 0, target: 1 },
+        { type: "cx", control: 2, target: 3 },
+        { type: "cx", control: 4, target: 5 },
+        { type: "cx", control: 6, target: 7 },
+      ],
+    ],
+  },
+  {
+    id: "adder",
+    label: "ADDER",
+    description: "Build a half adder: q2 is sum, q3 is carry.",
+    numQubits: 4,
+    initialBits: [0, 0, 0, 0],
+    truthTable: {
+      outputBits: [2, 3],
+      inputs: [
+        [0, 0, 0, 0],
+        [0, 1, 0, 0],
+        [1, 0, 0, 0],
+        [1, 1, 0, 0],
+      ],
+      expected(bits) {
+        const sum = bits[0] ^ bits[1];
+        const carry = bits[0] && bits[1] ? 1 : 0;
+        return { 2: sum, 3: carry };
+      },
+    },
+    solution: [
+      { type: "ccx", control: 0, control2: 1, target: 3 },
+      { type: "cx", control: 0, target: 2 },
+      { type: "cx", control: 1, target: 2 },
+    ],
+  },
+];
 
 function shortGateLabel(label) {
   return label
@@ -288,7 +450,7 @@ function orderedRows(rowHint) {
   return rows;
 }
 
-function createGate(gateId, rowHint = 0, overrides = {}, finalized = false) {
+function createGate(gateId, rowHint = 0, overrides = {}, finalized = true) {
   const definition = definitionForGate(gateId);
   const gate = {
     id: `gate-${state.nextGateId++}`,
@@ -319,6 +481,11 @@ function createGate(gateId, rowHint = 0, overrides = {}, finalized = false) {
     gate.control = defaultRows[0];
     gate.target = defaultRows[1] ?? defaultRows[0];
     gate.target2 = defaultRows[2] ?? defaultRows[0];
+  }
+  if (gate.type === "ccx") {
+    gate.control = defaultRows[0];
+    gate.control2 = defaultRows[1] ?? defaultRows[0];
+    gate.target = defaultRows[2] ?? defaultRows[0];
   }
 
   Object.assign(gate, overrides);
@@ -379,6 +546,9 @@ function isGateConfigValid(gate) {
   if (gate.type === "cswap" && new Set([gate.control, gate.target, gate.target2]).size < 3) {
     return false;
   }
+  if (gate.type === "ccx" && new Set([gate.control, gate.control2, gate.target]).size < 3) {
+    return false;
+  }
   return true;
 }
 
@@ -427,6 +597,9 @@ function gateRows(gate) {
   }
   if (gate.type === "cswap") {
     return [gate.control, gate.target, gate.target2].sort((left, right) => left - right);
+  }
+  if (gate.type === "ccx") {
+    return [gate.control, gate.control2, gate.target].sort((left, right) => left - right);
   }
   return [gate.target];
 }
@@ -592,7 +765,7 @@ function renderPalette() {
     node.dataset.category = gate.category;
     node.querySelector(".palette-code").textContent = gate.id === "measure" ? "M" : shortGateLabel(gate.label);
     node.querySelector(".palette-name").textContent = gate.label;
-    node.querySelector(".palette-category").textContent = gate.category;
+    node.querySelector(".palette-category").textContent = "";
     node.querySelector(".palette-tooltip-title").textContent = gate.label;
     node.querySelector(".palette-tooltip-purpose").textContent = guide.purpose;
     node.querySelector(".palette-tooltip-function").textContent = `Use: ${guide.inputs}`;
@@ -722,7 +895,9 @@ function renderGateField(field, gate, slotIndex) {
     } else {
       state.slots[slotIndex][gateIndex][field.key] = input.value;
     }
-    state.slots[slotIndex][gateIndex] = sanitizeGate(state.slots[slotIndex][gateIndex]);
+    const updatedGate = sanitizeGate(state.slots[slotIndex][gateIndex]);
+    updatedGate.finalized = isGateConfigValid(updatedGate) && !slotHasConflict(slotIndex, updatedGate, updatedGate.id);
+    state.slots[slotIndex][gateIndex] = updatedGate;
     renderWorkspace();
     runSimulation();
   });
@@ -748,7 +923,7 @@ function renderGateEditor(gate, slotIndex) {
 
   const note = document.createElement("p");
   note.className = "editor-note";
-  note.textContent = "Pick the qubits, then close the gate.";
+  note.textContent = "Adjust the settings or remove this gate.";
 
   const form = document.createElement("div");
   form.className = "editor-form";
@@ -758,23 +933,6 @@ function renderGateEditor(gate, slotIndex) {
 
   const footer = document.createElement("div");
   footer.className = "editor-footer";
-
-  const closeButton = document.createElement("button");
-  closeButton.type = "button";
-  closeButton.className = "editor-button editor-button-primary";
-  closeButton.textContent = "Close gate";
-  closeButton.disabled = !isGateConfigValid(gate) || slotHasConflict(slotIndex, gate, gate.id);
-  closeButton.addEventListener("click", () => {
-    const gateIndex = state.slots[slotIndex].findIndex((candidate) => candidate.id === gate.id);
-    if (gateIndex === -1) {
-      return;
-    }
-    state.slots[slotIndex][gateIndex].finalized = true;
-    state.activeEditorGateId = null;
-    renderWorkspace();
-    runSimulation();
-  });
-  footer.append(closeButton);
 
   const removeButton = document.createElement("button");
   removeButton.type = "button";
@@ -786,7 +944,7 @@ function renderGateEditor(gate, slotIndex) {
   if (!isGateConfigValid(gate) || slotHasConflict(slotIndex, gate, gate.id)) {
     const warning = document.createElement("span");
     warning.className = "editor-warning";
-    warning.textContent = "Pick qubits that do not overlap with other gates in this slot before closing.";
+    warning.textContent = "Pick qubits that do not overlap with other gates in this slot.";
     footer.append(warning);
   }
 
@@ -802,7 +960,7 @@ function renderSingleGateVisual(gate, stepNumber) {
   if (stepNumber === state.selectedStep) {
     button.classList.add("is-story-active");
   }
-  button.style.top = `${rowCenter(gate.target) - 28}px`;
+  button.style.top = `${rowCenter(gate.target) - 32}px`;
   button.textContent =
     gate.type === "measure" ? `M${gate.axis}` : definition.id.toUpperCase().slice(0, 2);
   button.title = stepNumber ? `${definition.label}. Step ${stepNumber}. Click to edit.` : `${definition.label}. Click to edit.`;
@@ -836,10 +994,27 @@ function renderMultiGateVisual(gate, stepNumber) {
 
     const targetNode = document.createElement("div");
     targetNode.className = `multi-node ${categoryClass(definition.category)}`;
-    targetNode.style.top = `${(gate.target - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 26}px`;
+    targetNode.style.top = `${(gate.target - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 31}px`;
     targetNode.textContent = gate.type === "cx" ? "X" : "Z";
 
     wrapper.append(controlNode, targetNode);
+  } else if (gate.type === "ccx") {
+    const firstControl = document.createElement("div");
+    firstControl.className = "multi-node control-node";
+    firstControl.style.top = `${(gate.control - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 12}px`;
+    firstControl.textContent = "C";
+
+    const secondControl = document.createElement("div");
+    secondControl.className = "multi-node control-node";
+    secondControl.style.top = `${(gate.control2 - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 12}px`;
+    secondControl.textContent = "C";
+
+    const targetNode = document.createElement("div");
+    targetNode.className = `multi-node ${categoryClass(definition.category)}`;
+    targetNode.style.top = `${(gate.target - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 31}px`;
+    targetNode.textContent = "X";
+
+    wrapper.append(firstControl, secondControl, targetNode);
   } else if (gate.type === "cswap") {
     const controlNode = document.createElement("div");
     controlNode.className = "multi-node control-node";
@@ -848,24 +1023,24 @@ function renderMultiGateVisual(gate, stepNumber) {
 
     const firstNode = document.createElement("div");
     firstNode.className = `multi-node ${categoryClass(definition.category)}`;
-    firstNode.style.top = `${(gate.target - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 26}px`;
+    firstNode.style.top = `${(gate.target - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 31}px`;
     firstNode.textContent = "SW";
 
     const secondNode = document.createElement("div");
     secondNode.className = `multi-node ${categoryClass(definition.category)}`;
-    secondNode.style.top = `${(gate.target2 - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 26}px`;
+    secondNode.style.top = `${(gate.target2 - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 31}px`;
     secondNode.textContent = "SW";
 
     wrapper.append(controlNode, firstNode, secondNode);
   } else {
     const firstNode = document.createElement("div");
     firstNode.className = `multi-node ${categoryClass(definition.category)}`;
-    firstNode.style.top = `${(gate.target - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 26}px`;
+    firstNode.style.top = `${(gate.target - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 31}px`;
     firstNode.textContent = "SW";
 
     const secondNode = document.createElement("div");
     secondNode.className = `multi-node ${categoryClass(definition.category)}`;
-    secondNode.style.top = `${(gate.target2 - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 26}px`;
+    secondNode.style.top = `${(gate.target2 - start) * ROW_HEIGHT + ROW_HEIGHT / 2 - 31}px`;
     secondNode.textContent = "SW";
 
     wrapper.append(firstNode, secondNode);
@@ -896,7 +1071,7 @@ function renderSlotColumn(slotIndex) {
     }
     const stepNumber = stepMap.get(gate.id) ?? null;
     const visual =
-      gate.type === "cx" || gate.type === "cz" || gate.type === "swap" || gate.type === "cswap"
+      gate.type === "cx" || gate.type === "cz" || gate.type === "swap" || gate.type === "cswap" || gate.type === "ccx"
         ? renderMultiGateVisual(gate, stepNumber)
         : renderSingleGateVisual(gate, stepNumber);
     visual.addEventListener("click", () => {
@@ -905,7 +1080,6 @@ function renderSlotColumn(slotIndex) {
       if (gateIndex === -1) {
         return;
       }
-      state.slots[slotIndex][gateIndex].finalized = false;
       state.activeEditorGateId = gate.id;
       renderWorkspace();
       runSimulation();
@@ -932,12 +1106,12 @@ function renderWorkspace() {
     workspaceElement.append(renderSlotColumn(slotIndex));
   });
 
-  const finalizedCount = finalizedGates().length;
-  const draftCount = state.slots.flat().filter((gate) => !gate.finalized).length;
+  const activeCount = finalizedGates().length;
+  const invalidCount = state.slots.flat().filter((gate) => !gate.finalized).length;
   workspaceHelpElement.textContent =
-    draftCount > 0
-      ? `${finalizedCount} closed gate(s), ${draftCount} open gate(s).`
-      : `${finalizedCount} closed gate(s). Drag a gate into any empty slot.`;
+    invalidCount > 0
+      ? `${activeCount} active gate(s), ${invalidCount} invalid gate(s).`
+      : `${activeCount} active gate(s). Drag a gate into any empty slot.`;
 }
 
 function renderTimeline() {
@@ -1162,10 +1336,10 @@ function renderSpheres() {
 }
 
 function renderResult() {
-  const finalizedCount = finalizedGates().length;
-  const openCount = state.slots.flat().filter((gate) => !gate.finalized).length;
+  const activeCount = finalizedGates().length;
+  const invalidCount = state.slots.flat().filter((gate) => !gate.finalized).length;
   statusMessageElement.textContent = state.result
-    ? `Viewing ${state.result.snapshots[state.selectedStep].label}. ${finalizedCount} closed gate(s)${openCount > 0 ? `, ${openCount} still open.` : "."}`
+    ? `Viewing ${state.result.snapshots[state.selectedStep].label}. ${activeCount} active gate(s)${invalidCount > 0 ? `, ${invalidCount} invalid.` : "."}`
     : "No simulation results yet.";
   renderTimeline();
   renderTransition();
@@ -1257,6 +1431,9 @@ function validateSimulationGate(gate, numQubits) {
   }
   if (gate.type === "cswap" && new Set([normalized.control, normalized.target, normalized.target2]).size < 3) {
     throw new Error("Controlled-Swap needs three different qubits.");
+  }
+  if (gate.type === "ccx" && new Set([normalized.control, normalized.control2, normalized.target]).size < 3) {
+    throw new Error("Toffoli needs two controls and one different target.");
   }
 
   return normalized;
@@ -1427,6 +1604,25 @@ function applyControlledSwap(vector, numQubits, control, firstTarget, secondTarg
   return next;
 }
 
+function applyControlledControlledX(vector, numQubits, firstControl, secondControl, target) {
+  const next = vector.map((amplitude) => complex(amplitude.real, amplitude.imag));
+  const firstControlMask = 1 << firstControl;
+  const secondControlMask = 1 << secondControl;
+  const targetMask = 1 << target;
+  const dimension = 1 << numQubits;
+
+  for (let index = 0; index < dimension; index += 1) {
+    if ((index & firstControlMask) === 0 || (index & secondControlMask) === 0 || (index & targetMask) !== 0) {
+      continue;
+    }
+    const pairedIndex = index | targetMask;
+    next[index] = vector[pairedIndex];
+    next[pairedIndex] = vector[index];
+  }
+
+  return next;
+}
+
 function applyGateInstruction(vector, gate, numQubits) {
   if (["h", "x", "y", "z", "s", "sdg", "t", "rx", "ry", "rz"].includes(gate.type)) {
     return applySingleQubitMatrix(vector, numQubits, gate.target, singleQubitMatrix(gate));
@@ -1442,6 +1638,9 @@ function applyGateInstruction(vector, gate, numQubits) {
   }
   if (gate.type === "cswap") {
     return applyControlledSwap(vector, numQubits, gate.control, gate.target, gate.target2);
+  }
+  if (gate.type === "ccx") {
+    return applyControlledControlledX(vector, numQubits, gate.control, gate.control2, gate.target);
   }
   throw new Error(`Unsupported gate type: ${gate.type}.`);
 }
@@ -1612,6 +1811,9 @@ function describeGate(gate) {
   if (gate.type === "cswap") {
     return `Controlled-Swap uses q${gate.control} to swap q${gate.target} and q${gate.target2}.`;
   }
+  if (gate.type === "ccx") {
+    return `Toffoli flips q${gate.target} when q${gate.control} and q${gate.control2} are both 1.`;
+  }
   if (gate.type === "measure") {
     return `Measure reads q${gate.target} along the ${gate.axis}-axis and collapses it.`;
   }
@@ -1690,6 +1892,94 @@ function buildSimulation(payload) {
   };
 }
 
+function statevectorForCircuit(numQubits, initialBits, rawGates) {
+  const gates = rawGates.map((gate) => validateSimulationGate(gate, numQubits));
+  let initialIndex = 0;
+  initialBits.forEach((bit, qubitIndex) => {
+    if (bit === 1) {
+      initialIndex |= 1 << qubitIndex;
+    }
+  });
+
+  let statevector = Array.from({ length: 1 << numQubits }, (_, index) => (index === initialIndex ? complex(1) : complex(0)));
+  gates.forEach((gate) => {
+    if (gate.type === "measure") {
+      statevector = measureGate(statevector, gate, numQubits).statevector;
+    } else {
+      statevector = applyGateInstruction(statevector, gate, numQubits);
+    }
+  });
+  return statevector;
+}
+
+function basisIndexFromBits(bits) {
+  return bits.reduce((index, bit, qubitIndex) => (bit === 1 ? index | (1 << qubitIndex) : index), 0);
+}
+
+function basisVector(numQubits, bits) {
+  const targetIndex = basisIndexFromBits(bits);
+  return Array.from({ length: 1 << numQubits }, (_, index) => (index === targetIndex ? complex(1) : complex(0)));
+}
+
+function ghzVector(numQubits) {
+  const dimension = 1 << numQubits;
+  const lastIndex = dimension - 1;
+  return Array.from({ length: dimension }, (_, index) =>
+    index === 0 || index === lastIndex ? complex(Math.SQRT1_2) : complex(0),
+  );
+}
+
+function complexDivide(left, right) {
+  const denominator = right.real * right.real + right.imag * right.imag;
+  return complex(
+    (left.real * right.real + left.imag * right.imag) / denominator,
+    (left.imag * right.real - left.real * right.imag) / denominator,
+  );
+}
+
+function vectorsEquivalentUpToGlobalPhase(actual, expected, tolerance = 1e-5) {
+  let pivotIndex = -1;
+  let pivotMagnitude = 0;
+  expected.forEach((amplitude, index) => {
+    const magnitude = complexMagnitude(amplitude);
+    if (magnitude > pivotMagnitude) {
+      pivotMagnitude = magnitude;
+      pivotIndex = index;
+    }
+  });
+
+  if (pivotIndex === -1 || pivotMagnitude < tolerance) {
+    return actual.every((amplitude) => complexMagnitude(amplitude) < tolerance);
+  }
+
+  if (complexMagnitude(actual[pivotIndex]) < tolerance) {
+    return false;
+  }
+
+  const phase = complexDivide(actual[pivotIndex], expected[pivotIndex]);
+  return expected.every((expectedAmplitude, index) => {
+    const phasedExpected = complexMultiply(phase, expectedAmplitude);
+    const delta = complexAdd(actual[index], complexScale(phasedExpected, -1));
+    return complexMagnitude(delta) <= tolerance;
+  });
+}
+
+function vectorHasExpectedOutputBits(vector, expectedBitsByIndex, tolerance = 1e-5) {
+  return vector.every((amplitude, basisIndex) => {
+    if (complexMagnitude(amplitude) <= tolerance) {
+      return true;
+    }
+    return Object.entries(expectedBitsByIndex).every(([qubitIndex, expectedBit]) => {
+      const actualBit = (basisIndex >> Number(qubitIndex)) & 1;
+      return actualBit === expectedBit;
+    });
+  });
+}
+
+function circuitDepth() {
+  return state.slots.filter((slotGates) => slotGates.some((gate) => gate.finalized && isGateConfigValid(gate))).length;
+}
+
 function runSimulation() {
   stopAnimation();
   animateButtonElement.disabled = true;
@@ -1715,17 +2005,168 @@ function runSimulation() {
   }
 }
 
-function presetBellPair() {
-  state.numQubits = 2;
-  state.initialBits = [0, 0];
-  state.slots = Array.from({ length: MIN_SLOT_COUNT }, () => []);
-  state.slots[0].push(createGate("h", 0, { target: 0 }, true));
-  state.slots[1].push(createGate("cx", 0, { control: 0, target: 1 }, true));
+function loadCircuit({ numQubits, initialBits, gates }) {
+  state.numQubits = numQubits;
+  state.initialBits = [...initialBits];
+  state.slots = Array.from({ length: Math.max(MIN_SLOT_COUNT, gates.length + 1) }, () => []);
+  gates.forEach((gateOrColumn, index) => {
+    const columnGates = Array.isArray(gateOrColumn) ? gateOrColumn : [gateOrColumn];
+    columnGates.forEach((gate) => {
+      state.slots[index].push(createGate(gate.type, gate.target ?? gate.control ?? 0, gate, true));
+    });
+  });
   state.selectedStep = 0;
   state.activeEditorGateId = null;
   renderControls();
   renderWorkspace();
   runSimulation();
+}
+
+function resetWorkspaceForProblem(problem) {
+  state.numQubits = problem.numQubits;
+  state.initialBits = [...problem.initialBits];
+  state.slots = Array.from({ length: MIN_SLOT_COUNT }, () => []);
+  state.selectedStep = 0;
+  state.activeEditorGateId = null;
+  state.activePracticeId = problem.id;
+  practiceFeedbackElement.textContent = `${problem.label}: ${problem.description}`;
+  renderControls();
+  renderPracticeButtons();
+  renderWorkspace();
+  runSimulation();
+}
+
+function loadDemo(demo) {
+  state.mode = "lab";
+  state.activePracticeId = null;
+  syncModeInterface();
+  loadCircuit({
+    numQubits: demo.numQubits,
+    initialBits: demo.initialBits,
+    gates: demo.gates,
+  });
+}
+
+function presetBellPair() {
+  loadDemo(labDemos[0]);
+}
+
+function renderDemoButtons() {
+  demoButtonsElement.innerHTML = "";
+  labDemos.forEach((demo) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "mode-choice-button";
+    button.innerHTML = `<strong>${demo.label}</strong><span>${demo.description}</span>`;
+    button.addEventListener("click", () => loadDemo(demo));
+    demoButtonsElement.append(button);
+  });
+}
+
+function renderPracticeButtons() {
+  practiceButtonsElement.innerHTML = "";
+  practiceProblems.forEach((problem) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `mode-choice-button ${state.activePracticeId === problem.id ? "is-active" : ""}`;
+    button.innerHTML = `<strong>${problem.label}</strong><span>${problem.description}</span>`;
+    button.addEventListener("click", () => resetWorkspaceForProblem(problem));
+    practiceButtonsElement.append(button);
+  });
+}
+
+function syncModeInterface() {
+  const isPracticeMode = state.mode === "practice";
+  modeToggleElement.checked = isPracticeMode;
+  modeLabelElement.textContent = isPracticeMode ? "Practice mode is on" : "Lab mode is on";
+  labModePanelElement.hidden = isPracticeMode;
+  practiceModePanelElement.hidden = !isPracticeMode;
+  document.body.dataset.mode = state.mode;
+  if (!isPracticeMode) {
+    practiceFeedbackElement.textContent = "Select a practice problem to begin.";
+  }
+}
+
+function activePracticeProblem() {
+  return practiceProblems.find((problem) => problem.id === state.activePracticeId) ?? null;
+}
+
+function checkPracticeSolution() {
+  const problem = activePracticeProblem();
+  if (!problem) {
+    practiceFeedbackElement.textContent = "Select a practice problem first.";
+    return;
+  }
+
+  const invalidCount = state.slots.flat().filter((gate) => !gate.finalized).length;
+  if (invalidCount > 0) {
+    practiceFeedbackElement.textContent = "Doesn't compile: fix or remove invalid gates before checking.";
+    return;
+  }
+  if (state.numQubits !== problem.numQubits) {
+    practiceFeedbackElement.textContent = `Wrong qubit count: this problem needs ${problem.numQubits} qubits.`;
+    return;
+  }
+
+  const gates = finalizedGates();
+  try {
+    if (problem.expected) {
+      const actual = statevectorForCircuit(problem.numQubits, problem.initialBits, gates);
+      if (!vectorsEquivalentUpToGlobalPhase(actual, problem.expected())) {
+        practiceFeedbackElement.textContent = "Wrong resulting vector.";
+        return;
+      }
+    }
+
+    if (problem.truthTable) {
+      const failedCase = problem.truthTable.inputs.find((inputBits) => {
+        const actual = statevectorForCircuit(problem.numQubits, inputBits, gates);
+        const expectedOutputBits = problem.truthTable.expected(inputBits);
+        return !vectorHasExpectedOutputBits(actual, expectedOutputBits);
+      });
+      if (failedCase) {
+        const outputs = problem.truthTable.outputBits.map((bit) => `q${bit}`).join(", ");
+        practiceFeedbackElement.textContent = `Wrong output on ${outputs} for input |${failedCase.join("")}>.`;
+        return;
+      }
+    }
+
+    if (problem.maxDepth && circuitDepth() > problem.maxDepth) {
+      practiceFeedbackElement.textContent = `Wrong depth: depth is ${circuitDepth()}, target is ${problem.maxDepth} or less.`;
+      return;
+    }
+  } catch (error) {
+    practiceFeedbackElement.textContent = `Doesn't compile: ${error.message}`;
+    return;
+  }
+
+  practiceFeedbackElement.textContent = "Correct solution.";
+}
+
+function showPracticeSolution() {
+  const problem = activePracticeProblem();
+  if (!problem) {
+    practiceFeedbackElement.textContent = "Select a practice problem first.";
+    return;
+  }
+  if (!problem.solution) {
+    practiceFeedbackElement.textContent = "No saved solution is available for this problem yet.";
+    return;
+  }
+
+  const wantsSolution = window.confirm(`Show the solution for ${problem.label}?`);
+  if (!wantsSolution) {
+    return;
+  }
+
+  loadCircuit({
+    numQubits: problem.numQubits,
+    initialBits: problem.initialBits,
+    gates: problem.solution,
+  });
+  state.activePracticeId = problem.id;
+  renderPracticeButtons();
+  practiceFeedbackElement.textContent = `Loaded solution for ${problem.label}.`;
 }
 
 function loadConfig() {
@@ -1738,6 +2179,9 @@ function loadConfig() {
   }
   qubitCountElement.value = String(state.numQubits);
   renderPalette();
+  renderDemoButtons();
+  renderPracticeButtons();
+  syncModeInterface();
   renderControls();
   renderWorkspace();
   runSimulation();
@@ -1781,7 +2225,15 @@ document.querySelector("#clear-button").addEventListener("click", () => {
   renderWorkspace();
   runSimulation();
 });
-document.querySelector("#preset-button").addEventListener("click", presetBellPair);
+
+modeToggleElement.addEventListener("change", () => {
+  state.mode = modeToggleElement.checked ? "practice" : "lab";
+  stopAnimation();
+  syncModeInterface();
+});
+
+checkSolutionButtonElement.addEventListener("click", checkPracticeSolution);
+showSolutionButtonElement.addEventListener("click", showPracticeSolution);
 
 updateAnimateButton();
 loadConfig();

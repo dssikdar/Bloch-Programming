@@ -17,7 +17,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
 HOST = "127.0.0.1"
 PORT = 8000
-MAX_QUBITS = 5
+MAX_QUBITS = 8
 AMPLITUDE_EPSILON = 1e-9
 
 GATE_LIBRARY = [
@@ -135,6 +135,17 @@ GATE_LIBRARY = [
         ],
     },
     {
+        "id": "ccx",
+        "label": "Toffoli",
+        "category": "Three-Qubit",
+        "description": "Flips the target only when both control qubits are |1>.",
+        "fields": [
+            {"key": "control", "label": "Control A", "kind": "qubit"},
+            {"key": "control2", "label": "Control B", "kind": "qubit"},
+            {"key": "target", "label": "Target", "kind": "qubit"},
+        ],
+    },
+    {
         "id": "measure",
         "label": "Measure",
         "category": "Measurement",
@@ -190,6 +201,8 @@ def validate_gate(gate: dict[str, Any], num_qubits: int) -> dict[str, Any]:
         raise ValueError("Swap needs two different qubits.")
     if gate_type == "cswap" and len({normalized["control"], normalized["target"], normalized["target2"]}) < 3:
         raise ValueError("Controlled-Swap needs three different qubits.")
+    if gate_type == "ccx" and len({normalized["control"], normalized["control2"], normalized["target"]}) < 3:
+        raise ValueError("Toffoli needs two controls and one different target.")
 
     return normalized
 
@@ -222,6 +235,8 @@ def apply_gate_instruction(circuit: QuantumCircuit, gate: dict[str, Any]) -> Non
         circuit.swap(gate["target"], gate["target2"])
     elif gate_type == "cswap":
         circuit.cswap(gate["control"], gate["target"], gate["target2"])
+    elif gate_type == "ccx":
+        circuit.ccx(gate["control"], gate["control2"], gate["target"])
 
 
 def evolve_statevector(statevector: Statevector, gate: dict[str, Any], num_qubits: int) -> Statevector:
@@ -409,6 +424,8 @@ def describe_gate(gate: dict[str, Any]) -> str:
         return f"Swap exchanges q{gate['target']} and q{gate['target2']}."
     if gate_type == "cswap":
         return f"Controlled-Swap uses q{gate['control']} to swap q{gate['target']} and q{gate['target2']}."
+    if gate_type == "ccx":
+        return f"Toffoli flips q{gate['target']} when q{gate['control']} and q{gate['control2']} are both 1."
     if gate_type == "measure":
         return f"Measure reads q{gate['target']} along the {gate['axis']}-axis and collapses it."
     return GATE_BY_ID[gate_type]["description"]

@@ -16,14 +16,25 @@
             Build a circuit, run it step by step, and watch each qubit change.
           </p>
         </div>
-        <div class="hero-badge">
-          <span>Red</span>
-          <span class="hero-dot hero-dot-red"></span>
-          <span>|0&gt;</span>
-          <span class="hero-dot hero-dot-mix"></span>
-          <span>superposition</span>
-          <span class="hero-dot hero-dot-blue"></span>
-          <span>|1&gt;</span>
+        <div class="hero-side">
+          <div class="mode-label" id="mode-label">Lab mode is on</div>
+          <label class="mode-switch" for="mode-toggle">
+            <span>Lab</span>
+            <input id="mode-toggle" type="checkbox" aria-describedby="mode-label" />
+            <span class="switch-track" aria-hidden="true">
+              <span class="switch-thumb"></span>
+            </span>
+            <span>Practice</span>
+          </label>
+          <div class="hero-badge">
+            <span>Red</span>
+            <span class="hero-dot hero-dot-red"></span>
+            <span>|0&gt;</span>
+            <span class="hero-dot hero-dot-mix"></span>
+            <span>superposition</span>
+            <span class="hero-dot hero-dot-blue"></span>
+            <span>|1&gt;</span>
+          </div>
         </div>
       </header>
 
@@ -38,49 +49,83 @@
         </div>
         <div class="control-actions">
           <button id="clear-button" class="action-button">Clear blocks</button>
-          <button id="preset-button" class="action-button">Load Bell demo</button>
         </div>
       </section>
 
-      <section class="panel palette-panel">
+      <section id="lab-mode-panel" class="panel mode-panel">
         <div class="panel-heading">
-          <h2>Block Palette</h2>
-          <p>Click a gate to add it, or drag it into the circuit.</p>
+          <h2>Lab Demos</h2>
+          <p>Load a starting circuit, then edit it freely.</p>
         </div>
-        <div id="palette" class="palette-row"></div>
+        <div id="demo-buttons" class="mode-button-row"></div>
       </section>
 
-      <section class="panel workspace-panel">
-        <div class="panel-heading">
-          <h2>Quantum Workspace</h2>
-          <p>Each column is one moment in the circuit. Open a gate to choose its qubits, then close it.</p>
-        </div>
-        <div id="workspace-dropzone" class="workspace-dropzone">
-          <div id="workspace" class="circuit-board"></div>
-        </div>
-        <div id="workspace-help" class="workspace-help"></div>
-      </section>
-
-      <section class="panel story-panel">
-        <div class="panel-heading">
-          <h2>Quantum Story</h2>
-          <p>Follow the circuit one step at a time.</p>
-        </div>
-        <div class="story-toolbar">
-          <div id="status-message" class="status-message">Running initial simulation...</div>
-          <button id="animate-button" class="action-button action-button-primary" type="button">
-            Animate Circuit
-          </button>
-        </div>
-        <div id="timeline" class="timeline"></div>
-        <div class="story-layout">
-          <div class="story-column">
-            <div id="transition" class="transition"></div>
-            <div id="global-state" class="global-state"></div>
+      <section id="practice-mode-panel" class="panel mode-panel" hidden>
+        <div class="practice-panel-top">
+          <div class="panel-heading">
+            <h2>Practice Problems</h2>
+            <p>Load a challenge, build your circuit, then check the result.</p>
           </div>
-          <div id="qubit-spheres" class="sphere-grid"></div>
+          <div class="practice-actions">
+            <button id="check-solution-button" class="action-button action-button-primary" type="button">
+              Check Solution
+            </button>
+            <button id="show-solution-button" class="action-button action-button-solution" type="button">
+              Show Solution
+            </button>
+          </div>
+        </div>
+        <div id="practice-buttons" class="mode-button-row"></div>
+        <div class="practice-toolbar">
+          <div id="practice-feedback" class="practice-feedback" aria-live="polite">
+            Select a practice problem to begin.
+          </div>
         </div>
       </section>
+
+      <div class="builder-layout">
+        <section class="panel palette-panel">
+          <div class="panel-heading">
+            <h2>Block Palette</h2>
+            <p>Click a gate to add it, or drag it into the circuit.</p>
+          </div>
+          <div id="palette" class="palette-row"></div>
+        </section>
+
+        <div class="builder-main">
+          <section class="panel workspace-panel">
+            <div class="panel-heading">
+              <h2>Quantum Workspace</h2>
+              <p>Each column is one moment in the circuit. Click a gate to adjust its qubits or remove it.</p>
+            </div>
+            <div id="workspace-dropzone" class="workspace-dropzone">
+              <div id="workspace" class="circuit-board"></div>
+            </div>
+            <div id="workspace-help" class="workspace-help"></div>
+          </section>
+
+          <section class="panel story-panel">
+            <div class="panel-heading">
+              <h2>Quantum Story</h2>
+              <p>Follow the circuit one step at a time.</p>
+            </div>
+            <div class="story-toolbar">
+              <div id="status-message" class="status-message">Running initial simulation...</div>
+              <button id="animate-button" class="action-button action-button-primary" type="button">
+                Animate Circuit
+              </button>
+            </div>
+            <div id="timeline" class="timeline"></div>
+            <div class="story-layout">
+              <div class="story-column">
+                <div id="transition" class="transition"></div>
+                <div id="global-state" class="global-state"></div>
+              </div>
+              <div id="qubit-spheres" class="sphere-grid"></div>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
 
     <template id="palette-block-template">
@@ -108,6 +153,6 @@
       </article>
     </template>
 
-    <script src="./app.js?v=github-pages-static-simulator-2026-04-25"></script>
+    <script src="./app.js?v=interactive-modes-2026-05-01"></script>
   </body>
 </html>
