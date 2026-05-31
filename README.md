@@ -122,20 +122,29 @@ The response includes normalized gates, simulation snapshots, per-qubit reports,
 ## Deploy to GitHub Pages
 
 1. Deploy the Python backend as a web service. `render.yaml` is included for Render and starts `python app.py` with `HOST=0.0.0.0`.
-2. Copy the deployed HTTPS backend origin.
-3. Set `qiskitApiOrigin` in `static/index.html`:
+2. Copy the deployed HTTPS backend origin, for example `https://quantum-blocks-qiskit-api.onrender.com`.
+3. In the GitHub repository settings, create an Actions repository variable named `QISKIT_API_ORIGIN` and set it to that backend origin.
+4. Push to `main` or `master`, or manually run **Deploy static lab to GitHub Pages**.
+
+The workflow injects `QISKIT_API_ORIGIN` into `static/index.html` before publishing. For a quick one-off test, you can also open the site with an `api` query parameter:
+
+```text
+https://your-github-pages-site/?api=https://your-qiskit-backend.example.com
+```
+
+For local development, leave `qiskitApiOrigin` as the placeholder and open the app through `python3 app.py`; the browser will use the local server automatically.
+
+If you deploy without setting `QISKIT_API_ORIGIN`, `static/index.html` will keep this placeholder:
 
 ```html
 <script>
   window.QUANTUM_BLOCKS_CONFIG = {
-    qiskitApiOrigin: "https://your-qiskit-backend.example.com",
+    qiskitApiOrigin: "__QISKIT_API_ORIGIN__",
   };
 </script>
 ```
 
-4. Push to `main` or `master`, or manually run **Deploy static lab to GitHub Pages**.
-
-The workflow publishes only the `static/` directory.
+The workflow copies `static/` to `dist/`, injects the API origin, and publishes `dist/`.
 
 ## Simulation Notes
 

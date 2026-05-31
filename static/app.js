@@ -1934,7 +1934,11 @@ function statevectorForCircuit(numQubits, initialBits, rawGates) {
 }
 
 function cleanApiOrigin(value) {
-  return typeof value === "string" ? value.trim().replace(/\/+$/, "") : "";
+  if (typeof value !== "string") {
+    return "";
+  }
+  const origin = value.trim().replace(/\/+$/, "");
+  return origin.includes("__QISKIT_API_ORIGIN__") ? "" : origin;
 }
 
 function isLocalHost(hostname) {
@@ -1946,10 +1950,24 @@ function isGithubPagesHost(hostname) {
 }
 
 function qiskitApiOrigins() {
+  const queryOrigin = cleanApiOrigin(new URLSearchParams(window.location.search).get("api"));
   const configuredOrigin = cleanApiOrigin(window.QUANTUM_BLOCKS_CONFIG?.qiskitApiOrigin);
+  let storedOrigin = "";
+  try {
+    storedOrigin = cleanApiOrigin(window.localStorage.getItem("qiskitApiOrigin"));
+  } catch (error) {
+    storedOrigin = "";
+  }
+
   const origins = [];
+  if (queryOrigin) {
+    origins.push(queryOrigin);
+  }
   if (configuredOrigin) {
     origins.push(configuredOrigin);
+  }
+  if (storedOrigin) {
+    origins.push(storedOrigin);
   }
 
   if (

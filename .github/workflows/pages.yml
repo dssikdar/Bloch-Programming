@@ -25,12 +25,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Prepare static site
+        env:
+          QISKIT_API_ORIGIN: ${{ vars.QISKIT_API_ORIGIN }}
+        run: |
+          cp -R static dist
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          origin = os.environ.get("QISKIT_API_ORIGIN", "").strip().rstrip("/")
+          index_path = Path("dist/index.html")
+          html = index_path.read_text()
+          html = html.replace("__QISKIT_API_ORIGIN__", origin)
+          index_path.write_text(html)
+
+          print(f"Qiskit API origin: {origin or '(not configured)'}")
+          PY
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: static
+          path: dist
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
