@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import mimetypes
+import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,8 +16,8 @@ from qiskit.quantum_info import Statevector, partial_trace
 
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
-HOST = "127.0.0.1"
-PORT = 8000
+HOST = os.environ.get("HOST", "127.0.0.1")
+PORT = int(os.environ.get("PORT", "8000"))
 MAX_QUBITS = 8
 AMPLITUDE_EPSILON = 1e-9
 
@@ -222,9 +223,9 @@ def apply_gate_instruction(circuit: QuantumCircuit, gate: dict[str, Any]) -> Non
     elif gate_type == "t":
         circuit.t(gate["target"])
     elif gate_type == "rx":
-        circuit.rx(2 * angle_to_radians(gate["angle"]), gate["target"])
+        circuit.rx(angle_to_radians(gate["angle"]), gate["target"])
     elif gate_type == "ry":
-        circuit.ry(2 * angle_to_radians(gate["angle"]), gate["target"])
+        circuit.ry(angle_to_radians(gate["angle"]), gate["target"])
     elif gate_type == "rz":
         circuit.rz(angle_to_radians(gate["angle"]), gate["target"])
     elif gate_type == "cx":
@@ -502,6 +503,19 @@ class QuantumBlocksHandler(BaseHTTPRequestHandler):
     def do_HEAD(self) -> None:
         self.handle_request(include_body=False)
 
+    def do_OPTIONS(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/"):
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self.send_cors_headers()
+            self.send_no_store_headers()
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Cache-Control")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "Unknown route.")
+
     def handle_request(self, *, include_body: bool) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/config":
@@ -565,6 +579,7 @@ class QuantumBlocksHandler(BaseHTTPRequestHandler):
         mime_type, _ = mimetypes.guess_type(str(file_path))
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", mime_type or "application/octet-stream")
+        self.send_no_store_headers()
         payload = file_path.read_bytes()
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
@@ -581,10 +596,20 @@ class QuantumBlocksHandler(BaseHTTPRequestHandler):
         data = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_cors_headers()
+        self.send_no_store_headers()
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         if include_body:
             self.wfile.write(data)
+
+    def send_cors_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+
+    def send_no_store_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
 
     def log_message(self, format_string: str, *args: Any) -> None:
         return

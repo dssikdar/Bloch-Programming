@@ -2,12 +2,12 @@
 
 Quantum Blocks Lab is an interactive teaching app for building and visualizing small quantum circuits. It presents gates as draggable blocks, runs the circuit step by step, and explains each qubit through probabilities, basis-state amplitudes, and simple Bloch-sphere visuals.
 
-The main app is a static browser app, so it can run from `static/index.html` or be deployed directly to GitHub Pages. A Python/Qiskit server is also included for local comparison and API-based simulation experiments.
+The browser UI sends circuits to a Python/Qiskit backend at `POST /api/simulate`, then renders the Qiskit-backed Quantum Story results. For local use, run `python3 app.py` and open `http://127.0.0.1:8000`. For GitHub Pages, deploy the Python backend separately and set `window.QUANTUM_BLOCKS_CONFIG.qiskitApiOrigin` to that HTTPS backend.
 
 ## Key Lab Features
 
 - Block-programming circuit builder with click-to-add and drag-and-drop gate placement
-- Configurable input register with 1 to 5 qubits
+- Configurable input register with 1 to 8 qubits
 - Gate palette for Hadamard, Pauli X/Y/Z, S, T, RX/RY/RZ, CX, CZ, Swap, Controlled-Swap, and measurement
 - Per-gate editors for target qubits, control qubits, rotation angles, and measurement axes
 - Conflict checks so multi-qubit gates do not overlap invalidly inside the same circuit column
@@ -27,6 +27,8 @@ The main app is a static browser app, so it can run from `static/index.html` or 
 .
 ├── app.py
 ├── requirements.txt
+├── render.yaml
+├── runtime.txt
 ├── static/
 │   ├── index.html
 │   ├── app.js
@@ -42,7 +44,7 @@ Defines the app shell: the header, qubit controls, block palette, circuit worksp
 
 ### `static/app.js`
 
-Contains the current production simulator and UI behavior. It manages app state, gate configuration, drag-and-drop placement, validation, timeline rendering, animation, complex-number math, statevector evolution, measurement collapse, amplitude reporting, and single-qubit reduced-state summaries.
+Contains the UI behavior. It manages app state, gate configuration, drag-and-drop placement, validation, timeline rendering, animation, and practice checks while requesting Quantum Story results from the Qiskit backend.
 
 ### `static/styles.css`
 
@@ -50,12 +52,10 @@ Styles the lab interface, including the responsive page layout, gate palette cat
 
 ### `app.py`
 
-Provides an optional local Python server on `127.0.0.1:8000`. It serves the static app and exposes:
+Provides the Python/Qiskit backend. Locally it runs on `127.0.0.1:8000`; in production it reads `HOST` and `PORT` from environment variables. It serves the app and exposes:
 
 - `GET /api/config` for gate metadata and max-qubit configuration
 - `POST /api/simulate` for Qiskit-backed statevector simulation
-
-The static app does not depend on this server for normal GitHub Pages use.
 
 ### `requirements.txt`
 
@@ -69,27 +69,7 @@ qiskit>=2.3,<3
 
 Deploys the `static/` directory to GitHub Pages whenever changes are pushed to `main` or `master`, or when the workflow is run manually.
 
-## Run the Static App Locally
-
-The simplest path is to open:
-
-```text
-static/index.html
-```
-
-You can also serve the static folder from the repo root:
-
-```bash
-python3 -m http.server 8000 --directory static
-```
-
-Then open:
-
-[http://127.0.0.1:8000](http://127.0.0.1:8000)
-
-## Run the Optional Python/Qiskit Server
-
-Use this mode when you want to compare the browser simulator with the Python implementation or call the local API routes.
+## Run the Python/Qiskit App
 
 1. Create and activate a virtual environment:
 
@@ -141,17 +121,26 @@ The response includes normalized gates, simulation snapshots, per-qubit reports,
 
 ## Deploy to GitHub Pages
 
-1. Push this project to a GitHub repository.
-2. In the repository settings, open **Pages**.
-3. Set **Source** to **GitHub Actions**.
+1. Deploy the Python backend as a web service. `render.yaml` is included for Render and starts `python app.py` with `HOST=0.0.0.0`.
+2. Copy the deployed HTTPS backend origin.
+3. Set `qiskitApiOrigin` in `static/index.html`:
+
+```html
+<script>
+  window.QUANTUM_BLOCKS_CONFIG = {
+    qiskitApiOrigin: "https://your-qiskit-backend.example.com",
+  };
+</script>
+```
+
 4. Push to `main` or `master`, or manually run **Deploy static lab to GitHub Pages**.
 
 The workflow publishes only the `static/` directory.
 
 ## Simulation Notes
 
-- The lab supports up to 5 qubits to keep the statevector small and the interface readable.
+- The lab supports up to 8 qubits to keep the statevector small enough for classroom use.
 - Displayed basis labels use app order: `q0`, `q1`, `q2`, and so on from left to right.
-- The browser simulator and Python server both use little-endian qubit indexing internally while formatting labels for the app's visible qubit order.
+- Qiskit uses little-endian qubit indexing internally while the app formats labels in visible `q0`, `q1`, `q2` order.
 - Measurement is intentionally deterministic for teaching: the app collapses to the more likely outcome, and exact ties resolve to `0`.
 - A Bloch vector is shown only when the single-qubit reduced state is pure enough to be represented locally. For entangled qubits, the card reports the probabilities and purity while hiding the local vector.
