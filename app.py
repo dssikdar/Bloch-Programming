@@ -222,9 +222,9 @@ def apply_gate_instruction(circuit: QuantumCircuit, gate: dict[str, Any]) -> Non
     elif gate_type == "t":
         circuit.t(gate["target"])
     elif gate_type == "rx":
-        circuit.rx(angle_to_radians(gate["angle"]), gate["target"])
+        circuit.rx(2 * angle_to_radians(gate["angle"]), gate["target"])
     elif gate_type == "ry":
-        circuit.ry(angle_to_radians(gate["angle"]), gate["target"])
+        circuit.ry(2 * angle_to_radians(gate["angle"]), gate["target"])
     elif gate_type == "rz":
         circuit.rz(angle_to_radians(gate["angle"]), gate["target"])
     elif gate_type == "cx":

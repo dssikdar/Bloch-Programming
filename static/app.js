@@ -288,7 +288,7 @@ const labDemos = [
     label: "Gate Reversibility",
     description: "Apply gates and then undo them to return to the input.",
     numQubits: 2,
-    initialBits: [1, 0],
+    initialBits: [0, 0],
     gates: [
       { type: "h", target: 0 },
       { type: "cx", control: 0, target: 1 },
@@ -301,7 +301,7 @@ const labDemos = [
     label: "XOR Gate",
     description: "Write q0 XOR q1 into q2.",
     numQubits: 3,
-    initialBits: [1, 0, 0],
+    initialBits: [0, 0, 0],
     gates: [
       { type: "cx", control: 0, target: 2 },
       { type: "cx", control: 1, target: 2 },
@@ -312,7 +312,7 @@ const labDemos = [
     label: "AND Gate",
     description: "Write q0 AND q1 into q2.",
     numQubits: 3,
-    initialBits: [1, 1, 0],
+    initialBits: [0, 0, 0],
     gates: [{ type: "ccx", control: 0, control2: 1, target: 2 }],
   },
 ];
@@ -450,7 +450,7 @@ function orderedRows(rowHint) {
   return rows;
 }
 
-function createGate(gateId, rowHint = 0, overrides = {}, finalized = true) {
+function createGate(gateId, rowHint = 0, overrides = {}, finalized = false) {
   const definition = definitionForGate(gateId);
   const gate = {
     id: `gate-${state.nextGateId++}`,
@@ -896,7 +896,7 @@ function renderGateField(field, gate, slotIndex) {
       state.slots[slotIndex][gateIndex][field.key] = input.value;
     }
     const updatedGate = sanitizeGate(state.slots[slotIndex][gateIndex]);
-    updatedGate.finalized = isGateConfigValid(updatedGate) && !slotHasConflict(slotIndex, updatedGate, updatedGate.id);
+    updatedGate.finalized = false;
     state.slots[slotIndex][gateIndex] = updatedGate;
     renderWorkspace();
     runSimulation();
@@ -923,7 +923,7 @@ function renderGateEditor(gate, slotIndex) {
 
   const note = document.createElement("p");
   note.className = "editor-note";
-  note.textContent = "Adjust the settings or remove this gate.";
+  note.textContent = "Adjust the settings, then apply or remove this gate.";
 
   const form = document.createElement("div");
   form.className = "editor-form";
@@ -933,6 +933,23 @@ function renderGateEditor(gate, slotIndex) {
 
   const footer = document.createElement("div");
   footer.className = "editor-footer";
+
+  const applyButton = document.createElement("button");
+  applyButton.type = "button";
+  applyButton.className = "editor-button editor-button-primary";
+  applyButton.textContent = "Apply gate";
+  applyButton.disabled = !isGateConfigValid(gate) || slotHasConflict(slotIndex, gate, gate.id);
+  applyButton.addEventListener("click", () => {
+    const gateIndex = state.slots[slotIndex].findIndex((candidate) => candidate.id === gate.id);
+    if (gateIndex === -1) {
+      return;
+    }
+    state.slots[slotIndex][gateIndex].finalized = true;
+    state.activeEditorGateId = null;
+    renderWorkspace();
+    runSimulation();
+  });
+  footer.append(applyButton);
 
   const removeButton = document.createElement("button");
   removeButton.type = "button";
@@ -944,7 +961,7 @@ function renderGateEditor(gate, slotIndex) {
   if (!isGateConfigValid(gate) || slotHasConflict(slotIndex, gate, gate.id)) {
     const warning = document.createElement("span");
     warning.className = "editor-warning";
-    warning.textContent = "Pick qubits that do not overlap with other gates in this slot.";
+    warning.textContent = "Pick qubits that do not overlap with other gates in this slot before applying.";
     footer.append(warning);
   }
 
@@ -1107,11 +1124,11 @@ function renderWorkspace() {
   });
 
   const activeCount = finalizedGates().length;
-  const invalidCount = state.slots.flat().filter((gate) => !gate.finalized).length;
+  const pendingCount = state.slots.flat().filter((gate) => !gate.finalized).length;
   workspaceHelpElement.textContent =
-    invalidCount > 0
-      ? `${activeCount} active gate(s), ${invalidCount} invalid gate(s).`
-      : `${activeCount} active gate(s). Drag a gate into any empty slot.`;
+    pendingCount > 0
+      ? `${activeCount} applied gate(s), ${pendingCount} pending gate(s).`
+      : `${activeCount} applied gate(s). Drag a gate into any empty slot.`;
 }
 
 function renderTimeline() {
@@ -1337,9 +1354,9 @@ function renderSpheres() {
 
 function renderResult() {
   const activeCount = finalizedGates().length;
-  const invalidCount = state.slots.flat().filter((gate) => !gate.finalized).length;
+  const pendingCount = state.slots.flat().filter((gate) => !gate.finalized).length;
   statusMessageElement.textContent = state.result
-    ? `Viewing ${state.result.snapshots[state.selectedStep].label}. ${activeCount} active gate(s)${invalidCount > 0 ? `, ${invalidCount} invalid.` : "."}`
+    ? `Viewing ${state.result.snapshots[state.selectedStep].label}. ${activeCount} applied gate(s)${pendingCount > 0 ? `, ${pendingCount} pending.` : "."}`
     : "No simulation results yet.";
   renderTimeline();
   renderTransition();
@@ -1511,14 +1528,14 @@ function singleQubitMatrix(gate) {
     ];
   }
   if (gate.type === "rx") {
-    const halfAngle = angleToRadians(gate.angle) / 2;
+    const halfAngle = angleToRadians(gate.angle);
     return [
       [complex(Math.cos(halfAngle)), complex(0, -Math.sin(halfAngle))],
       [complex(0, -Math.sin(halfAngle)), complex(Math.cos(halfAngle))],
     ];
   }
   if (gate.type === "ry") {
-    const halfAngle = angleToRadians(gate.angle) / 2;
+    const halfAngle = angleToRadians(gate.angle);
     return [
       [complex(Math.cos(halfAngle)), complex(-Math.sin(halfAngle))],
       [complex(Math.sin(halfAngle)), complex(Math.cos(halfAngle))],
@@ -2098,9 +2115,9 @@ function checkPracticeSolution() {
     return;
   }
 
-  const invalidCount = state.slots.flat().filter((gate) => !gate.finalized).length;
-  if (invalidCount > 0) {
-    practiceFeedbackElement.textContent = "Doesn't compile: fix or remove invalid gates before checking.";
+  const pendingCount = state.slots.flat().filter((gate) => !gate.finalized).length;
+  if (pendingCount > 0) {
+    practiceFeedbackElement.textContent = "Doesn't compile: apply or remove pending gates before checking.";
     return;
   }
   if (state.numQubits !== problem.numQubits) {
@@ -2189,6 +2206,7 @@ function loadConfig() {
 
 qubitCountElement.addEventListener("change", () => {
   state.numQubits = Number(qubitCountElement.value);
+  state.initialBits = Array.from({ length: state.numQubits }, () => 0);
   syncQubitCount();
   renderControls();
   renderWorkspace();
@@ -2220,8 +2238,10 @@ animateButtonElement.addEventListener("click", () => {
 
 document.querySelector("#clear-button").addEventListener("click", () => {
   state.slots = Array.from({ length: MIN_SLOT_COUNT }, () => []);
+  state.initialBits = Array.from({ length: state.numQubits }, () => 0);
   state.selectedStep = 0;
   state.activeEditorGateId = null;
+  renderControls();
   renderWorkspace();
   runSimulation();
 });
