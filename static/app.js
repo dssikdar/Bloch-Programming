@@ -1,11 +1,8 @@
 const MIN_SLOT_COUNT = 4;
-const APP_BUILD = "qiskit-story-backend-2026-05-31";
+const APP_BUILD = "browser-simulator-2026-05-31";
 const ROW_HEIGHT =
   Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-height")) || 116;
 const SLOT_BOX_HEIGHT = 98;
-const DEFAULT_QISKIT_API_ORIGIN = "http://127.0.0.1:8000";
-const QISKIT_API_MESSAGE =
-  "Qiskit backend unavailable. Start python3 app.py and open http://127.0.0.1:8000, or configure qiskitApiOrigin for the website.";
 
 function rowCenter(rowIndex) {
   return rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
@@ -28,7 +25,6 @@ const state = {
   activeEditorGateId: null,
   isAnimating: false,
   animationTimer: null,
-  simulationRunId: 0,
 };
 
 const LOCAL_CONFIG = {
@@ -1532,14 +1528,14 @@ function singleQubitMatrix(gate) {
     ];
   }
   if (gate.type === "rx") {
-    const halfAngle = angleToRadians(gate.angle);
+    const halfAngle = angleToRadians(gate.angle) / 2;
     return [
       [complex(Math.cos(halfAngle)), complex(0, -Math.sin(halfAngle))],
       [complex(0, -Math.sin(halfAngle)), complex(Math.cos(halfAngle))],
     ];
   }
   if (gate.type === "ry") {
-    const halfAngle = angleToRadians(gate.angle);
+    const halfAngle = angleToRadians(gate.angle) / 2;
     return [
       [complex(Math.cos(halfAngle)), complex(-Math.sin(halfAngle))],
       [complex(Math.sin(halfAngle)), complex(Math.cos(halfAngle))],
@@ -1933,121 +1929,6 @@ function statevectorForCircuit(numQubits, initialBits, rawGates) {
   return statevector;
 }
 
-function cleanApiOrigin(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-  const origin = value.trim().replace(/\/+$/, "");
-  return origin.includes("__QISKIT_API_ORIGIN__") ? "" : origin;
-}
-
-function isLocalHost(hostname) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-}
-
-function isGithubPagesHost(hostname) {
-  return hostname.endsWith(".github.io");
-}
-
-function qiskitApiOrigins() {
-  const queryOrigin = cleanApiOrigin(new URLSearchParams(window.location.search).get("api"));
-  const configuredOrigin = cleanApiOrigin(window.QUANTUM_BLOCKS_CONFIG?.qiskitApiOrigin);
-  let storedOrigin = "";
-  try {
-    storedOrigin = cleanApiOrigin(window.localStorage.getItem("qiskitApiOrigin"));
-  } catch (error) {
-    storedOrigin = "";
-  }
-
-  const origins = [];
-  if (queryOrigin) {
-    origins.push(queryOrigin);
-  }
-  if (configuredOrigin) {
-    origins.push(configuredOrigin);
-  }
-  if (storedOrigin) {
-    origins.push(storedOrigin);
-  }
-
-  if (
-    (window.location.protocol === "http:" || window.location.protocol === "https:") &&
-    !isGithubPagesHost(window.location.hostname)
-  ) {
-    origins.push(window.location.origin);
-  }
-
-  if (
-    window.location.protocol === "file:" ||
-    isLocalHost(window.location.hostname) ||
-    window.location.hostname.endsWith(".local")
-  ) {
-    origins.push(DEFAULT_QISKIT_API_ORIGIN);
-  }
-
-  return [...new Set(origins.map(cleanApiOrigin).filter(Boolean))];
-}
-
-async function fetchQiskitApi(path, options = {}) {
-  const errors = [];
-  for (const origin of qiskitApiOrigins()) {
-    const url = `${origin}${path}`;
-    try {
-      const response = await fetch(url, {
-        ...options,
-        cache: "no-store",
-        headers: {
-          "Cache-Control": "no-store",
-          ...(options.headers ?? {}),
-        },
-      });
-      const contentType = response.headers.get("Content-Type") ?? "";
-      if (!contentType.includes("application/json")) {
-        throw new Error("backend did not return JSON");
-      }
-
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error ?? "backend request failed");
-      }
-      return payload;
-    } catch (error) {
-      errors.push(`${url}: ${error.message}`);
-    }
-  }
-  throw new Error(`${QISKIT_API_MESSAGE} ${errors.join(" ")}`);
-}
-
-async function simulateWithQiskit(payload) {
-  return fetchQiskitApi("/api/simulate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-}
-
-async function statevectorFromQiskit(numQubits, initialBits, gates) {
-  const result = await simulateWithQiskit({ numQubits, initialBits, gates });
-  const finalSnapshot = result.snapshots.at(-1);
-  return statevectorFromSnapshot(finalSnapshot, numQubits);
-}
-
-function statevectorFromSnapshot(snapshot, numQubits) {
-  const vector = Array.from({ length: 1 << numQubits }, () => complex(0));
-  snapshot.amplitudes.forEach((amplitude) => {
-    let basisIndex = 0;
-    Array.from(amplitude.basis).forEach((bit, qubitIndex) => {
-      if (bit === "1") {
-        basisIndex |= 1 << qubitIndex;
-      }
-    });
-    vector[basisIndex] = complex(amplitude.real, amplitude.imag);
-  });
-  return vector;
-}
-
 function basisIndexFromBits(bits) {
   return bits.reduce((index, bit, qubitIndex) => (bit === 1 ? index | (1 << qubitIndex) : index), 0);
 }
@@ -2116,29 +1997,21 @@ function circuitDepth() {
   return state.slots.filter((slotGates) => slotGates.some((gate) => gate.finalized && isGateConfigValid(gate))).length;
 }
 
-async function runSimulation() {
-  const runId = state.simulationRunId + 1;
-  state.simulationRunId = runId;
+function runSimulation() {
   stopAnimation();
   animateButtonElement.disabled = true;
   animateButtonElement.textContent = "Animate Circuit";
-  statusMessageElement.textContent = "Running Qiskit simulation...";
+  statusMessageElement.textContent = "Running browser simulation...";
   try {
-    const result = await simulateWithQiskit({
+    const result = buildSimulation({
       numQubits: state.numQubits,
       initialBits: state.initialBits,
       gates: finalizedGates(),
     });
-    if (runId !== state.simulationRunId) {
-      return;
-    }
     state.result = result;
     state.selectedStep = Math.min(state.selectedStep, state.result.snapshots.length - 1);
     renderResult();
   } catch (error) {
-    if (runId !== state.simulationRunId) {
-      return;
-    }
     state.result = null;
     timelineElement.innerHTML = "";
     transitionElement.innerHTML = "";
@@ -2235,7 +2108,7 @@ function activePracticeProblem() {
   return practiceProblems.find((problem) => problem.id === state.activePracticeId) ?? null;
 }
 
-async function checkPracticeSolution() {
+function checkPracticeSolution() {
   const problem = activePracticeProblem();
   if (!problem) {
     practiceFeedbackElement.textContent = "Select a practice problem first.";
@@ -2253,11 +2126,9 @@ async function checkPracticeSolution() {
   }
 
   const gates = finalizedGates();
-  checkSolutionButtonElement.disabled = true;
-  practiceFeedbackElement.textContent = "Checking with Qiskit...";
   try {
     if (problem.expected) {
-      const actual = await statevectorFromQiskit(problem.numQubits, problem.initialBits, gates);
+      const actual = statevectorForCircuit(problem.numQubits, problem.initialBits, gates);
       if (!vectorsEquivalentUpToGlobalPhase(actual, problem.expected())) {
         practiceFeedbackElement.textContent = "Wrong resulting vector.";
         return;
@@ -2265,15 +2136,11 @@ async function checkPracticeSolution() {
     }
 
     if (problem.truthTable) {
-      let failedCase = null;
-      for (const inputBits of problem.truthTable.inputs) {
-        const actual = await statevectorFromQiskit(problem.numQubits, inputBits, gates);
+      const failedCase = problem.truthTable.inputs.find((inputBits) => {
+        const actual = statevectorForCircuit(problem.numQubits, inputBits, gates);
         const expectedOutputBits = problem.truthTable.expected(inputBits);
-        if (!vectorHasExpectedOutputBits(actual, expectedOutputBits)) {
-          failedCase = inputBits;
-          break;
-        }
-      }
+        return !vectorHasExpectedOutputBits(actual, expectedOutputBits);
+      });
       if (failedCase) {
         const outputs = problem.truthTable.outputBits.map((bit) => `q${bit}`).join(", ");
         practiceFeedbackElement.textContent = `Wrong output on ${outputs} for input |${failedCase.join("")}>.`;
@@ -2288,8 +2155,6 @@ async function checkPracticeSolution() {
   } catch (error) {
     practiceFeedbackElement.textContent = `Doesn't compile: ${error.message}`;
     return;
-  } finally {
-    checkSolutionButtonElement.disabled = false;
   }
 
   practiceFeedbackElement.textContent = "Correct solution.";
